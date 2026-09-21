@@ -1,0 +1,8 @@
+{
+  "name": "@kamod-ch/tracking-example-devjobs",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@kamod-ch/tracking": "workspace:*"
+  }
+}

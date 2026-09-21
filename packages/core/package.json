@@ -1,0 +1,95 @@
+{
+  "name": "@kamod-ch/tracking",
+  "version": "0.1.0",
+  "description": "First-party product analytics: consent-aware core, SSR-safe browser client, optional Preact adapter.",
+  "keywords": [
+    "analytics",
+    "consent",
+    "first-party",
+    "kamod",
+    "preact",
+    "privacy",
+    "tracking",
+    "typescript"
+  ],
+  "homepage": "https://github.com/kamod-ch/kamod-tracking#readme",
+  "bugs": {
+    "url": "https://github.com/kamod-ch/kamod-tracking/issues"
+  },
+  "license": "MIT",
+  "author": "Klaus Zahiragic <watzak>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kamod-ch/kamod-tracking.git",
+    "directory": "packages/core"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./preact": {
+      "types": "./dist/preact.d.ts",
+      "import": "./dist/preact.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:postgres": "vitest run tests/postgres.integration.test.ts",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@testing-library/preact": "^3.2.4",
+    "@types/node": "^24.5.2",
+    "@types/pg": "^8.15.5",
+    "jsdom": "^27.0.0",
+    "pg": "^8.16.3",
+    "preact": "^10.26.9",
+    "preact-render-to-string": "^6.5.13",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "pg": ">=8.11.0",
+    "preact": ">=10.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "preact": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

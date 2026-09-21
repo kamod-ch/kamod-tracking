@@ -1,0 +1,11 @@
+{
+  "name": "@kamod-tracking/example-preact-consent-visibility",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node smoke-export.mjs"
+  },
+  "dependencies": {
+    "@kamod-ch/tracking": "workspace:*"
+  }
+}

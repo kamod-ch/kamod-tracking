@@ -1,0 +1,42 @@
+{
+  "name": "kamod-tracking",
+  "version": "0.1.0",
+  "private": true,
+  "description": "First-party product analytics for Kamod apps: consent-aware, origin-explicit, no fingerprinting.",
+  "license": "MIT",
+  "author": "Klaus Zahiragic <watzak>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kamod-ch/kamod-tracking.git"
+  },
+  "type": "module",
+  "scripts": {
+    "prepublishOnly": "node -e \"console.error('Do not publish the workspace root. Use: pnpm publish:core'); process.exit(1)\"",
+    "build": "pnpm --filter @kamod-ch/tracking build",
+    "build:core": "pnpm --filter @kamod-ch/tracking build",
+    "test": "pnpm --filter @kamod-ch/tracking test",
+    "test:core": "pnpm --filter @kamod-ch/tracking test",
+    "typecheck": "pnpm --filter @kamod-ch/tracking typecheck",
+    "typecheck:core": "pnpm --filter @kamod-ch/tracking typecheck",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "measure:bundle": "pnpm build:core && node ./scripts/measure-bundle.mjs",
+    "e2e:smoke": "pnpm build:core && node ./scripts/e2e-smoke.mjs",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm test:examples && pnpm build && pnpm check:exports && pnpm measure:bundle && pnpm e2e:smoke",
+    "test:postgres": "pnpm --filter @kamod-ch/tracking test:postgres",
+    "test:examples": "pnpm build:core && node --experimental-strip-types examples/devjobs/registry.test.mjs && node examples/vanilla-browser/demo.mjs && node examples/server-outbox-postgres/outbox-demo.mjs && node examples/preact-consent-visibility/smoke-export.mjs",
+    "check:exports": "node ./scripts/check-packed-exports.mjs",
+    "pack:core": "pnpm --filter @kamod-ch/tracking exec npm pack --dry-run",
+    "publish:core": "node -e \"console.error('Publishing is out of scope for this workspace.'); process.exit(1)\""
+  },
+  "devDependencies": {
+    "@kamod-ch/tracking": "workspace:*",
+    "@types/node": "^24.5.2",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "typescript": "^5.9.2"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

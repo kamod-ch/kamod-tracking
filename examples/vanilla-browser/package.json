@@ -1,0 +1,11 @@
+{
+  "name": "@kamod-tracking/example-vanilla-browser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node demo.mjs"
+  },
+  "dependencies": {
+    "@kamod-ch/tracking": "workspace:*"
+  }
+}

@@ -1,0 +1,14 @@
+services:
+  tracking-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tracking
+      POSTGRES_PASSWORD: tracking
+      POSTGRES_DB: tracking_test
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracking -d tracking_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 15

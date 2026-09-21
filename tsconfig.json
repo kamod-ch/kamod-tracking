@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@kamod-ch/tracking": ["packages/core/src/index.ts"],
+      "@kamod-ch/tracking/browser": ["packages/core/src/browser.ts"],
+      "@kamod-ch/tracking/preact": ["packages/core/src/preact.ts"],
+      "@kamod-ch/tracking/server": ["packages/core/src/server.ts"]
+    },
+    "declaration": true,
+    "sourceMap": true
+  }
+}
