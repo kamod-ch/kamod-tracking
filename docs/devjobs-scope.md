@@ -13,16 +13,16 @@ Devjobs app integration (concrete routes, UI, env vars) is documented in the Dev
 
 ## Still outside this SDK version (product / other repos)
 
-| Capability                                              | Why outside                                                                    |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **ProLitteris / levies / official publisher reporting** | Legal and product workflow, not envelope ingest                                |
-| **Metering and plan enforcement**                       | Billing domain; may _read_ aggregates but does not belong in the tracking core |
-| **Hosted analytics dashboard**                          | Devjobs employer studio and ops views are app code                             |
-| **Cookie banner / jurisdiction automation**             | Host CMP; SDK mirrors consent only                                             |
-| **Person-level unique reach**                           | Not provided without explicit authenticated/server identity design             |
-| **Self-certifying analytics as legally binding**        | SDK explicitly treats browser events as untrusted for proof purposes           |
+| Capability                                              | Why outside                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **ProLitteris / levies / official publisher reporting** | Legal and product workflow, not envelope ingest                                                         |
+| **Metering and plan enforcement**                       | Billing domain; may _read_ aggregates but does not belong in the tracking core                          |
+| **Hosted analytics dashboard**                          | Devjobs employer studio and ops views are app code                                                      |
+| **Cookie banner / jurisdiction automation**             | Host CMP; SDK mirrors consent only                                                                      |
+| **Person-level unique reach**                           | Not provided without explicit authenticated/server identity design                                      |
+| **Self-certifying analytics as legally binding**        | SDK explicitly treats browser events as untrusted for proof purposes                                    |
 | **Email / notification open pixel (1×1 GIF)**           | No concrete Devjobs or core requirement in v0.1 — see [pixel-adapter.md](./pixel-adapter.md) / ADR 0010 |
-| **Automatic data erasure across Postgres + CDN**        | Erasure jobs and policies are operational product concerns                     |
+| **Automatic data erasure across Postgres + CDN**        | Erasure jobs and policies are operational product concerns                                              |
 
 ## Recommended split for Devjobs
 

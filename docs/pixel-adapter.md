@@ -8,12 +8,12 @@ Therefore the SDK **does not** expose a pixel collector route, `pixel.request` e
 
 ## What to use instead
 
-| Need | Approach |
-| ---- | -------- |
-| Page / listing impressions | Browser client + visibility rules ([visibility-measurement.md](./visibility-measurement.md)) |
-| Clicks / navigation | Registry events via browser collector |
-| Verified apply / billing facts | Server outbox + bearer auth ([collector.md](./collector.md)) |
-| Mail “opens” (future) | Design in **your app repo** with legal/privacy review; do not equate pixels with impressions or official reporting |
+| Need                           | Approach                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Page / listing impressions     | Browser client + visibility rules ([visibility-measurement.md](./visibility-measurement.md))                       |
+| Clicks / navigation            | Registry events via browser collector                                                                              |
+| Verified apply / billing facts | Server outbox + bearer auth ([collector.md](./collector.md))                                                       |
+| Mail “opens” (future)          | Design in **your app repo** with legal/privacy review; do not equate pixels with impressions or official reporting |
 
 ## Trust and reporting
 

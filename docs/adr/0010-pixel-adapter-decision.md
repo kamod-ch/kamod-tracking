@@ -16,10 +16,10 @@ Pixels interact badly with measurement integrity: CDN and mailbox caches, link p
 
 ## Concrete consumer review
 
-| Consumer | Stated measurement needs (this repo) | Pixel need |
-| -------- | ------------------------------------ | ---------- |
+| Consumer                                                                                              | Stated measurement needs (this repo)                                                                                                                  | Pixel need                                                                                               |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **Devjobs.ch** ([devjobs-scope.md](../devjobs-scope.md), [examples/devjobs](../../examples/devjobs/)) | Listing impressions via visibility + consent; apply/outbound clicks in browser; trusted facts via **server outbox**; employer metrics from aggregates | **None documented** — no newsletter open tracking, no mail-template pixel requirement in app or SDK docs |
-| **Generic core** (`content.view`) | Browser + server collectors | No pixel path |
+| **Generic core** (`content.view`)                                                                     | Browser + server collectors                                                                                                                           | No pixel path                                                                                            |
 
 Production Devjobs wiring is described in the Devjobs app repo; nothing there is referenced from kamod-tracking as a blocking pixel use case. **ProLitteris / certified reporting** is explicitly out of scope for the SDK.
 
