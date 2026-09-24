@@ -10,6 +10,7 @@ export const createDevjobsRegistry = () => {
       schema_version: 1,
       producers: ["browser"],
       privacyClass: "public",
+      collectionPurpose: "measurement",
       maxPayloadBytes: 2048,
       fields: [
         { kind: "path", key: "path", required: true },

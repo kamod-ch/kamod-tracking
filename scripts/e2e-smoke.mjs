@@ -107,13 +107,10 @@ run(
 );
 
 if (process.env.TRACKING_TEST_DATABASE_URL) {
-  run(
-    "PostgreSQL ingest + daily aggregate",
-    "pnpm --filter @kamod-ch/tracking exec vitest run tests/postgres.integration.test.ts tests/postgres-aggregation.integration.test.ts",
-  );
+  run("PostgreSQL integration (all SQL suites)", "pnpm test:postgres");
 } else {
   console.log(
-    "\n[e2e] PostgreSQL path skipped — set TRACKING_TEST_DATABASE_URL for full ingest → aggregate run",
+    "\n[e2e] PostgreSQL skipped in e2e:smoke — use pnpm verify:all for mandatory SQL gate (CI job postgres).",
   );
 }
 

@@ -1,0 +1,12 @@
+{
+  "name": "@kamod-tracking/example-collector-postgres",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node demo.mjs"
+  },
+  "dependencies": {
+    "@kamod-ch/tracking": "workspace:*",
+    "pg": "^8.23.0"
+  }
+}

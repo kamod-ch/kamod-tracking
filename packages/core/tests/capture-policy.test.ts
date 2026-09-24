@@ -153,6 +153,35 @@ describe("capture policy and identity modes", () => {
     expect(tracker.getConsent("measurement")).toBe("denied");
   });
 
+  it("keeps analytics capture and sending when only measurement consent is revoked", async () => {
+    const transport = createMemoryTransport();
+    const tracker = createBrowserTracker({
+      appId: "app-a",
+      identityMode: "session",
+      sessionStorage: createMemoryKeyValueStorage(),
+      transport,
+      now,
+      ids: { eventId: () => "evt_analytics", visitorId: () => "sid_1" },
+    });
+    tracker.adoptExternalConsent({
+      recordedAt: "2026-09-21T12:00:00.000Z",
+      purposes: { analytics: "granted", measurement: "granted" },
+    });
+    tracker.configureCapture({ enableNetworkSending: true });
+    await tracker.pageView({ path: "/home" });
+    expect(transport.sent).toHaveLength(1);
+
+    tracker.adoptExternalConsent({
+      recordedAt: "2026-09-21T12:01:00.000Z",
+      purposes: { analytics: "granted", measurement: "denied" },
+    });
+
+    transport.sent.length = 0;
+    const result = await tracker.pageView({ path: "/jobs" });
+    expect(result.ok).toBe(true);
+    expect(transport.sent).toHaveLength(1);
+  });
+
   it("continues session resolution when storage throws", async () => {
     const storage = createMemoryKeyValueStorage();
     vi.spyOn(storage, "setItem").mockImplementation(() => {

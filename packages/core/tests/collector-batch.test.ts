@@ -12,7 +12,6 @@ import {
   createStaticSiteRegistry,
   DEFAULT_MAX_BATCH_BYTES,
   DEFAULT_MAX_BATCH_EVENTS,
-  eventIdFromOutboxId,
 } from "../src/server";
 
 const collectorContext = {
@@ -124,6 +123,35 @@ describe("browser batch collector", () => {
     expect(response.status).toBe(403);
   });
 
+  it("rejects forbidden Origin even when Referer matches allowlist", async () => {
+    const { handler } = setupBrowser();
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example",
+          referer: "https://app.example/page",
+        },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("OPTIONS preflight returns Vary Origin and echoes allowed Origin", async () => {
+    const { handler } = setupBrowser();
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "OPTIONS",
+        headers: { origin: "https://app.example" },
+      }),
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get("vary")).toBe("Origin");
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+  });
+
   it("rejects oversized batch bodies before parsing", async () => {
     const { handler } = setupBrowser();
     const big = "x".repeat(DEFAULT_MAX_BATCH_BYTES + 1);
@@ -203,6 +231,209 @@ describe("browser batch collector", () => {
     };
     expect(body.outcomes.filter((o) => o.status === "accepted")).toHaveLength(2);
     expect(store.list()).toHaveLength(1);
+  });
+
+  it("rejects missing event_id without using unknown as the outcome id", async () => {
+    const { handler } = setupBrowser();
+    const { event_id: _removed, ...withoutId } = browserEvent();
+    void _removed;
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(withoutId),
+      }),
+    );
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      outcomes: { event_id: string; status: string; reason?: string }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("rejected");
+    expect(body.outcomes[0]?.reason).toBe("invalid-payload");
+    expect(body.outcomes[0]?.event_id).toBe("");
+    expect(JSON.stringify(body)).not.toContain("unknown");
+  });
+
+  it("rejects payload-conflict when an existing id is reused with different content", async () => {
+    const { handler, store } = setupBrowser();
+    const first = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    expect(first.status).toBe(202);
+    expect(store.list()).toHaveLength(1);
+
+    const second = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(
+          browserEvent({
+            occurred_at: "2026-09-21T12:05:00.000Z",
+            properties: { path: "/other", content_type: "article" },
+          }),
+        ),
+      }),
+    );
+    expect(second.status).toBe(202);
+    const body = (await second.json()) as {
+      outcomes: { status: string; reason?: string }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("rejected");
+    expect(body.outcomes[0]?.reason).toBe("payload-conflict");
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it("rejects conflicting duplicate ids within one batch", async () => {
+    const { handler, store } = setupBrowser();
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify({
+          appId: "app-a",
+          events: [
+            browserEvent(),
+            browserEvent({
+              occurred_at: "2026-09-21T12:05:00.000Z",
+              properties: { path: "/changed", content_type: "article" },
+            }),
+          ],
+        }),
+      }),
+    );
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      outcomes: { status: string; reason?: string; duplicate?: boolean }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("accepted");
+    expect(body.outcomes[0]?.duplicate).toBe(false);
+    expect(body.outcomes[1]?.status).toBe("rejected");
+    expect(body.outcomes[1]?.reason).toBe("payload-conflict");
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it("accepts an identical retry after a stored event (lost ack)", async () => {
+    const { handler, store } = setupBrowser();
+    await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    expect(store.list()).toHaveLength(1);
+    const retry = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    const body = (await retry.json()) as {
+      outcomes: { status: string; duplicate?: boolean }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("accepted");
+    expect(body.outcomes[0]?.duplicate).toBe(true);
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it("preserves adapter rejections in mergeOutcomes", async () => {
+    const store = createResettableMemoryEnvelopeStore();
+    const registry = createEventRegistry();
+    registerContentViewEvents(registry);
+    const consents = createMemoryConsentStore();
+    recordConsent({
+      store: consents,
+      appId: "app-a",
+      purpose: "analytics",
+      state: "granted",
+      recordedAt: "2026-09-21T12:00:00.000Z",
+    });
+    const handler = createBrowserCollectHandler({
+      sites: createStaticSiteRegistry([site]),
+      registry,
+      createContractOptions: () => ({
+        appId: "app-a",
+        registry,
+        collector: collectorContext,
+        envelopeStore: store,
+        consents,
+      }),
+      batchAcceptance: {
+        async acceptBatch(envelopes) {
+          return {
+            ok: true as const,
+            outcomes: envelopes.map((envelope) => ({
+              event_id: envelope.event_id,
+              status: "rejected" as const,
+              reason: "invalid-payload" as const,
+            })),
+          };
+        },
+      },
+      requirePublicKey: false,
+    });
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      outcomes: { status: string; reason?: string }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("rejected");
+    expect(body.outcomes[0]?.reason).toBe("invalid-payload");
+  });
+
+  it("does not keep optimistic accepted when adapter outcomes are missing", async () => {
+    const store = createResettableMemoryEnvelopeStore();
+    const registry = createEventRegistry();
+    registerContentViewEvents(registry);
+    const consents = createMemoryConsentStore();
+    recordConsent({
+      store: consents,
+      appId: "app-a",
+      purpose: "analytics",
+      state: "granted",
+      recordedAt: "2026-09-21T12:00:00.000Z",
+    });
+    const handler = createBrowserCollectHandler({
+      sites: createStaticSiteRegistry([site]),
+      registry,
+      createContractOptions: () => ({
+        appId: "app-a",
+        registry,
+        collector: collectorContext,
+        envelopeStore: store,
+        consents,
+      }),
+      batchAcceptance: {
+        async acceptBatch() {
+          return { ok: true as const, outcomes: [] };
+        },
+      },
+      requirePublicKey: false,
+    });
+    const response = await handler(
+      new Request("https://collect.example/v1/collect/pk_test", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example" },
+        body: JSON.stringify(browserEvent()),
+      }),
+    );
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      outcomes: { status: string; reason?: string }[];
+    };
+    expect(body.outcomes[0]?.status).toBe("rejected");
+    expect(body.outcomes[0]?.reason).toBe("storage-error");
   });
 
   it("returns retryable storage errors without leaking payloads", async () => {
@@ -288,7 +519,7 @@ describe("browser batch collector", () => {
   });
 });
 
-describe("server collector", () => {
+describe("server collector (legacy placement)", () => {
   it("rejects browser-origin business events on the trusted server path", async () => {
     const store = createResettableMemoryEnvelopeStore();
     const registry = createEventRegistry();
@@ -331,12 +562,5 @@ describe("server collector", () => {
       }),
     );
     expect(response.status).toBe(403);
-  });
-
-  it("derives stable event ids from outbox ids for replay-safe writes", () => {
-    const a = eventIdFromOutboxId("obx_123");
-    const b = eventIdFromOutboxId("obx_123");
-    expect(a).toBe(b);
-    expect(a.startsWith("obx_")).toBe(true);
   });
 });

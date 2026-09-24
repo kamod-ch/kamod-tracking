@@ -17,6 +17,7 @@ export const contentViewV1 = defineEvent<ContentViewPropertiesV1>({
   schema_version: 1,
   producers: ["browser", "server"],
   privacyClass: "public",
+  collectionPurpose: "analytics",
   maxPayloadBytes: 2048,
   fields: [
     { kind: "path", key: "path", required: true },
@@ -30,6 +31,7 @@ export const contentViewV2 = defineEvent<ContentViewPropertiesV2>({
   schema_version: 2,
   producers: ["browser", "server"],
   privacyClass: "public",
+  collectionPurpose: "analytics",
   maxPayloadBytes: 2048,
   fields: [
     { kind: "path", key: "path", required: true },

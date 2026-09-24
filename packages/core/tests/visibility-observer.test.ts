@@ -75,6 +75,16 @@ const createHarness = (options: HarnessOptions = {}) => {
   return { observer, target, emitRatio, advanceTo, impressions, lifecycle, setDocumentVisible };
 };
 
+const qualifyAndConfirm = (
+  h: ReturnType<typeof createHarness>,
+  subjectKey: string,
+  element?: Element,
+) => {
+  h.emitRatio(0.5, element ?? h.target);
+  h.advanceTo(1000);
+  h.observer.confirmImpression(subjectKey);
+};
+
 describe("visibility impression observer", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -90,6 +100,7 @@ describe("visibility impression observer", () => {
     h.advanceTo(999);
     expect(h.impressions).toEqual([]);
     h.advanceTo(1000);
+    h.observer.confirmImpression("job_a");
     expect(h.impressions).toEqual(["job_a"]);
   });
 
@@ -111,6 +122,7 @@ describe("visibility impression observer", () => {
     h.advanceTo(1800);
     expect(h.impressions).toEqual([]);
     h.advanceTo(1900);
+    h.observer.confirmImpression("job_a");
     expect(h.impressions).toEqual(["job_a"]);
   });
 
@@ -126,15 +138,14 @@ describe("visibility impression observer", () => {
     h.setDocumentVisible(true);
     h.emitRatio(0.5);
     h.advanceTo(3000);
+    h.observer.confirmImpression("job_a");
     expect(h.impressions).toEqual(["job_a"]);
   });
 
   it("does not count a remount of the same subject in the same view", () => {
     const h = createHarness();
     const first = h.observer.observe(h.target, { subjectKey: "job_a" });
-    h.emitRatio(0.5);
-    h.advanceTo(1000);
-    expect(h.impressions).toEqual(["job_a"]);
+    qualifyAndConfirm(h, "job_a");
     first.disconnect();
     const remounted = fakeElement();
     h.observer.observe(remounted, { subjectKey: "job_a" });
@@ -146,13 +157,23 @@ describe("visibility impression observer", () => {
   it("counts the same subject again after a new view begins", () => {
     const h = createHarness();
     h.observer.observe(h.target, { subjectKey: "job_a" });
-    h.emitRatio(0.5);
-    h.advanceTo(1000);
+    qualifyAndConfirm(h, "job_a");
     h.lifecycle.beginView({ surface: "job-detail", viewId: "view_2" });
     h.observer.observe(h.target, { subjectKey: "job_a" });
     h.emitRatio(0.5);
     h.advanceTo(2000);
+    h.observer.confirmImpression("job_a");
     expect(h.impressions).toEqual(["job_a", "job_a"]);
+  });
+
+  it("clears pending timers when the view changes during qualification", () => {
+    const h = createHarness();
+    h.observer.observe(h.target, { subjectKey: "job_a" });
+    h.emitRatio(0.5);
+    h.advanceTo(500);
+    h.lifecycle.beginView({ surface: "job-detail", viewId: "view_2" });
+    h.advanceTo(5000);
+    expect(h.impressions).toEqual([]);
   });
 
   it("skips ineligible targets such as promo cards without a job", () => {

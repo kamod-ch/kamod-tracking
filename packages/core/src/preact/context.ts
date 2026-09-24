@@ -7,6 +7,8 @@ import type {
 
 export type TrackingVisibility = {
   observe(target: Element, options: VisibilityTargetOptions): VisibilityObserverHandle;
+  confirmImpression(subjectKey: string): void;
+  cancelImpression(subjectKey: string): void;
 };
 
 export type TrackingContextValue = {

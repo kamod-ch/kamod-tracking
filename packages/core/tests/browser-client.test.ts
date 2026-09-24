@@ -100,9 +100,84 @@ describe("browser client transport", () => {
       event_id: "evt_stable",
       properties: { path: "/a", content_type: "page" },
     });
+    await vi.waitFor(() => {
+      expect(calls).toBe(1);
+    });
     await vi.advanceTimersByTimeAsync(1000);
     await vi.runAllTimersAsync();
-    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(calls).toBe(2);
+  });
+
+  it("does not ack queue entries for foreign outcome ids", async () => {
+    let sendCalls = 0;
+    const transport: CollectorTransport = {
+      async sendBatch(events) {
+        sendCalls += 1;
+        if (sendCalls === 1) {
+          return {
+            delivery: "verified",
+            retryable: false,
+            outcomes: [{ event_id: "evt_foreign", status: "accepted", duplicate: false }],
+          };
+        }
+        return {
+          delivery: "verified",
+          retryable: false,
+          outcomes: events.map((event) => ({
+            event_id: event.event_id,
+            status: "accepted" as const,
+            duplicate: false,
+          })),
+        };
+      },
+    };
+    const tracker = setup(transport);
+    await tracker.capture({
+      event_name: "content.view",
+      schema_version: 1,
+      event_id: "evt_real",
+      properties: { path: "/a", content_type: "page" },
+    });
+    await vi.runAllTimersAsync();
+    expect(sendCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("retries after incomplete verified outcomes without immediate double send", async () => {
+    let calls = 0;
+    const transport: CollectorTransport = {
+      async sendBatch(events) {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            delivery: "verified",
+            retryable: false,
+            outcomes: [],
+          };
+        }
+        return {
+          delivery: "verified",
+          retryable: false,
+          outcomes: events.map((event) => ({
+            event_id: event.event_id,
+            status: "accepted" as const,
+            duplicate: false,
+          })),
+        };
+      },
+    };
+    const tracker = setup(transport);
+    await tracker.capture({
+      event_name: "content.view",
+      schema_version: 1,
+      event_id: "evt_gap",
+      properties: { path: "/a", content_type: "page" },
+    });
+    await vi.waitFor(() => {
+      expect(calls).toBe(1);
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+    expect(calls).toBe(2);
   });
 
   it("discards permanently invalid events without endless retry", async () => {
@@ -174,12 +249,14 @@ describe("browser client transport", () => {
 
   it("treats beacon success as browser-accepted not verified", async () => {
     let beaconUsed = false;
+    let beaconBody: BodyInit | null | undefined;
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const transport = createCollectorTransport({
       endpoint: "https://collect.example",
       publicKey: "pk_test",
-      sendBeacon: () => {
+      sendBeacon: (_url, data) => {
         beaconUsed = true;
+        beaconBody = data;
         return true;
       },
     });
@@ -194,6 +271,8 @@ describe("browser client transport", () => {
     tracker.configureCapture({ enableNetworkSending: true });
     await tracker.flush({ unload: true });
     expect(beaconUsed).toBe(true);
+    expect(beaconBody).toBeInstanceOf(Blob);
+    expect((beaconBody as Blob).type).toBe("application/json");
     vi.unstubAllGlobals();
   });
 

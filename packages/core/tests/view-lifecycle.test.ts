@@ -27,4 +27,12 @@ describe("view lifecycle", () => {
     const lifecycle = createViewLifecycle();
     expect(lifecycle.shouldCountSubject("job_1")).toBe(false);
   });
+
+  it("treats repeated beginView on the same surface as idempotent", () => {
+    const lifecycle = createViewLifecycle({ createViewId: () => "view_x" });
+    const id = lifecycle.beginView({ surface: "list" });
+    lifecycle.markSubjectCounted("job_1");
+    expect(lifecycle.beginView({ surface: "list" })).toBe(id);
+    expect(lifecycle.shouldCountSubject("job_1")).toBe(false);
+  });
 });

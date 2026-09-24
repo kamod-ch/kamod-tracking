@@ -1,4 +1,5 @@
 import { recordConsent } from "./consent";
+import type { CollectorContext } from "./envelope";
 import type { ConsentStore } from "./types";
 import type { VisitorIdentityMode } from "./config";
 import { toIso } from "./runtime";
@@ -45,6 +46,21 @@ export type ExternalConsentSnapshot = {
   readonly recordedAt?: string;
   readonly purposes: Partial<Record<Purpose, Exclude<ConsentState, "unknown">>>;
 };
+
+/**
+ * Browser-side collection permission (CMP mirror, `setConsent`, in-app toggles).
+ * A purpose-wide `granted` is **not** proof of a specific visitor, legal basis, or server policy compliance.
+ */
+export type BrowserCollectionDecision = ExternalConsentSnapshot;
+
+/**
+ * Collector / site configuration: allowed identity modes and active browser identity mode.
+ * Independent of browser-reported consent; the collector enforces both layers.
+ */
+export type CollectorCollectionPolicy = Pick<
+  CollectorContext,
+  "allowedBrowserIdentityModes" | "browserIdentityMode" | "collectionPolicyVersion"
+>;
 
 export const mapLegacyVisitorIdentity = (
   legacy: VisitorIdentityMode | undefined,

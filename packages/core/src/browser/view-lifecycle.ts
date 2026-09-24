@@ -14,6 +14,7 @@ export type ViewLifecycle = {
   /** One impression per subject key within the active view. */
   shouldCountSubject(subjectKey: string): boolean;
   markSubjectCounted(subjectKey: string): void;
+  onViewChange(listener: () => void): () => void;
   reset(): void;
 };
 
@@ -28,6 +29,17 @@ export const createViewLifecycle = (options: ViewLifecycleOptions = {}): ViewLif
   let viewId: string | undefined;
   let surface: string | undefined;
   const countedSubjects = new Set<string>();
+  const viewChangeListeners = new Set<() => void>();
+
+  const notifyViewChange = (): void => {
+    for (const listener of viewChangeListeners) {
+      try {
+        listener();
+      } catch {
+        // ignore host listener failures
+      }
+    }
+  };
 
   const resetSubjects = (): void => {
     countedSubjects.clear();
@@ -35,15 +47,25 @@ export const createViewLifecycle = (options: ViewLifecycleOptions = {}): ViewLif
 
   return {
     beginView(input) {
+      if (viewId !== undefined && surface === input.surface) {
+        if (input.viewId === undefined || input.viewId === viewId) {
+          return viewId;
+        }
+      }
       viewId = input.viewId ?? createViewId();
       surface = input.surface;
       resetSubjects();
+      notifyViewChange();
       return viewId;
     },
     endView() {
+      if (viewId === undefined && surface === undefined) {
+        return;
+      }
       viewId = undefined;
       surface = undefined;
       resetSubjects();
+      notifyViewChange();
     },
     getState() {
       return { viewId, surface };
@@ -61,10 +83,15 @@ export const createViewLifecycle = (options: ViewLifecycleOptions = {}): ViewLif
       }
       countedSubjects.add(`${viewId}:${subjectKey}`);
     },
+    onViewChange(listener) {
+      viewChangeListeners.add(listener);
+      return () => viewChangeListeners.delete(listener);
+    },
     reset() {
       viewId = undefined;
       surface = undefined;
       resetSubjects();
+      notifyViewChange();
     },
   };
 };

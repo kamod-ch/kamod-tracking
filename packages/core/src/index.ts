@@ -19,12 +19,15 @@ export {
   validateBrowserIdentityAgainstPolicy,
 } from "./core/capture-policy";
 export type {
+  BrowserCollectionDecision,
   CaptureConfiguration,
   CaptureIdentityMode,
   CapturePolicyState,
+  CollectorCollectionPolicy,
   ExternalConsentSnapshot,
   SessionLifetimeLimits,
 } from "./core/capture-policy";
+export { resolveEventCollectionPurpose } from "./core/collection-purpose";
 export { createMemoryConsentStore, recordConsent, readConsentState } from "./core/consent";
 export { createMemoryEventStore } from "./core/store";
 export { createMemoryEnvelopeStore } from "./core/envelope-store";

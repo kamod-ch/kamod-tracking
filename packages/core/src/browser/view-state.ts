@@ -6,12 +6,19 @@ export const createViewImpressionState = () => {
   const seen = new Set<string>();
 
   return {
+    canRecordPageImpression(path: string): boolean {
+      const key = path.trim() || "/";
+      return !seen.has(key);
+    },
+    commitPageImpression(path: string): void {
+      const key = path.trim() || "/";
+      seen.add(key);
+    },
     shouldRecordPageImpression(path: string): boolean {
       const key = path.trim() || "/";
       if (seen.has(key)) {
         return false;
       }
-      seen.add(key);
       return true;
     },
     reset() {

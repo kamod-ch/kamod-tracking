@@ -16,12 +16,13 @@ Last reviewed against `packages/core` and `pnpm verify` (see [verify-matrix.md](
 - Visibility: rule `visible_area_50pct_1s_v1`, observer + explicit `beginView` / `endView`. See [visibility-measurement.md](./visibility-measurement.md), ADR 0008.
 - Preact adapter (`./preact`): `TrackingProvider`, hooks, job-list demo (`packages/core/src/examples/preact-job-demo.tsx`, [preact-integration.md](./preact-integration.md)).
 - Server collectors: browser batch + trusted server outbox path, site registry, limits, rate limit, Hono mount helpers ([collector.md](./collector.md)). Fetch `Request` / `Response`, not a hosted product.
-- PostgreSQL adapter: migrations, scoped accept + dedup inbox (ADR 0007), daily aggregates, retention, raw watermark, ops counters ([postgres-adapter.md](./postgres-adapter.md), [aggregation.md](./aggregation.md), ADR 0009). Integration tests when `TRACKING_TEST_DATABASE_URL` is set.
-- Packed tarball consumer check: `pnpm check:exports`.
-- Documented runnable examples under [examples/](../examples/) (vanilla browser, server outbox, devjobs registry). Preact consent + visibility: core tests + demo source (see [examples/preact-consent-visibility](../examples/preact-consent-visibility/README.md)).
+- PostgreSQL adapter: migrations through **006** (ops outcome metrics), scoped accept + dedup inbox (ADR 0007), daily aggregates, batched retention, **outcome-linked ops counters** ([observability.md](./observability.md), [postgres-adapter.md](./postgres-adapter.md), [aggregation.md](./aggregation.md), [migrations.md](./migrations.md), ADR 0009). **CI** job `postgres` runs `pnpm test:postgres` (five integration suites; fails if `TRACKING_TEST_DATABASE_URL` unset). Release gate: `pnpm verify:all` adds SQL example [examples/collector-postgres](../examples/collector-postgres/). Local: Docker compose + env URL in [verify-matrix.md](./verify-matrix.md).
+- Operational guarantees documented: [operational-guarantees.md](./operational-guarantees.md) (transport, consent, session, rebuild).
+- Documented runnable examples: [examples/README.md](../examples/README.md) — memory demos vs **collector-postgres** (PG batch adapter) vs product-owned outbox/workers.
 
 ## Open / out of scope for this repository
 
+- **Tracking pixel / mail-open GIF adapter** — not implemented; no documented consumer requirement ([pixel-adapter.md](./pixel-adapter.md), ADR 0010).
 - **Metering, billing, ProLitteris, and official usage certification** — integrate in product repos; not part of `@kamod-ch/tracking` core. See [integration-contract.md](./integration-contract.md) and [devjobs-scope.md](./devjobs-scope.md).
 - **Hosted collector, dashboard, or operator UI** — SDK only (ADR 0004).
 - **Cookie banner / CMP** — host app or separate privacy layer; SDK mirrors consent via `adoptExternalConsent` / `setConsent`.

@@ -38,24 +38,67 @@ export const createMemoryBatchEnvelopeAcceptance = (
 ): BatchEnvelopeAcceptance => {
   return {
     async acceptBatch(envelopes) {
-      const snapshot = await Promise.resolve(store.list());
+      const snapshot = structuredClone(await Promise.resolve(store.list()));
       const outcomes: BatchEventOutcome[] = [];
+      const batchPayloadHashById = new Map<string, ReturnType<typeof hashEnvelopePayload>>();
       try {
         for (const envelope of envelopes) {
+          const payloadHash = hashEnvelopePayload(envelope);
+          const priorHash = batchPayloadHashById.get(envelope.event_id);
+          if (priorHash !== undefined) {
+            outcomes.push(
+              payloadHashesEqual(priorHash, payloadHash)
+                ? {
+                    event_id: envelope.event_id,
+                    status: "accepted",
+                    duplicate: true,
+                  }
+                : {
+                    event_id: envelope.event_id,
+                    status: "rejected",
+                    reason: "payload-conflict",
+                  },
+            );
+            continue;
+          }
+          batchPayloadHashById.set(envelope.event_id, payloadHash);
+
           const existing = await Promise.resolve(store.get(envelope.event_id));
           if (existing) {
             const same = payloadHashesEqual(
               hashEnvelopePayload(existing),
               hashEnvelopePayload(envelope),
             );
+            if (!same) {
+              outcomes.push({
+                event_id: envelope.event_id,
+                status: "rejected",
+                reason: "payload-conflict",
+              });
+              continue;
+            }
             outcomes.push({
               event_id: envelope.event_id,
               status: "accepted",
-              duplicate: same,
+              duplicate: true,
             });
             continue;
           }
           const appendResult = await Promise.resolve(store.append(envelope));
+          if (appendResult.duplicate) {
+            const stored = await Promise.resolve(store.get(envelope.event_id));
+            const same =
+              stored !== undefined &&
+              payloadHashesEqual(hashEnvelopePayload(stored), hashEnvelopePayload(envelope));
+            if (!same) {
+              outcomes.push({
+                event_id: envelope.event_id,
+                status: "rejected",
+                reason: "payload-conflict",
+              });
+              continue;
+            }
+          }
           outcomes.push({
             event_id: envelope.event_id,
             status: "accepted",

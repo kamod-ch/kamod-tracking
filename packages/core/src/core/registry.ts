@@ -1,4 +1,5 @@
 import type { ProducerKind, PrivacyClass } from "./envelope";
+import type { Purpose } from "./types";
 import {
   payloadByteLength,
   validateEventFields,
@@ -20,6 +21,8 @@ export type EventDefinition<TProperties extends Record<string, unknown> = Record
     readonly schema_version: number;
     readonly producers: readonly ProducerKind[];
     readonly privacyClass: PrivacyClass;
+    /** Purpose required for collection consent checks (server/event policy, not browser-declared). */
+    readonly collectionPurpose: Purpose;
     readonly maxPayloadBytes: number;
     readonly fields: readonly EventFieldDef[];
     /** ISO timestamp until which stored events of this version remain readable. */

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node outbox-demo.mjs"
+    "test": "node outbox-demo.mjs && node domain-outbox-worker.mjs"
   },
   "dependencies": {
     "@kamod-ch/tracking": "workspace:*"

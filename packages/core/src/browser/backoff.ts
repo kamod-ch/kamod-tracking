@@ -27,6 +27,7 @@ export const PERMANENT_SERVER_REJECT_REASONS = new Set([
   "trust-mismatch",
   "unknown-app",
   "payload-too-large",
+  "payload-conflict",
 ]);
 
 export const isPermanentRejectReason = (reason: string): boolean =>

@@ -1,9 +1,10 @@
-import { prepareContractEnvelope, type ContractIngestOptions } from "../core/contract-ingest";
 import { sanitizeForLog } from "../core/sanitize";
 import type { IngestRejectReason } from "../core/types";
 import { isJsonContentType, readBodyWithLimit } from "./request-guards";
 import type { BatchEnvelopeAcceptance } from "./batch-contract";
-import { eventIdFromOutboxId, type OutboxEventWriter, type OutboxTrackingRecord } from "./outbox";
+import type { ContractIngestOptions } from "../core/contract-ingest";
+import { prepareValidatedOutboxEnvelope, rejectForbiddenOutboxScopeClaims } from "./outbox-prepare";
+import { type OutboxEventWriter, type OutboxTrackingRecord } from "./outbox";
 import type { PublicIngestSite } from "./site-registry";
 
 export type ServerCollectAuth =
@@ -21,6 +22,24 @@ export type ServerCollectorOptions = {
 };
 
 export type ServerCollectHandler = (request: Request) => Promise<Response>;
+
+export type ServerCollectResponseBody =
+  | {
+      readonly ok: true;
+      readonly eventId: string;
+      readonly duplicate: boolean;
+      readonly source?: "outbox";
+    }
+  | {
+      readonly ok: false;
+      readonly reason:
+        | IngestRejectReason
+        | "invalid-payload"
+        | "payload-too-large"
+        | "storage-error";
+      readonly retryable?: boolean;
+      readonly eventId?: string;
+    };
 
 export const createServerCollectHandler = (
   options: ServerCollectorOptions,
@@ -50,60 +69,73 @@ export const createServerCollectHandler = (
       return json({ ok: false, reason: "invalid-payload" }, 400);
     }
     const record = parsed as Record<string, unknown>;
-    if (record.origin === "browser" || record.producer === "browser") {
-      return json({ ok: false, reason: "producer-not-allowed" }, 403);
+
+    const scopeReject = rejectForbiddenOutboxScopeClaims(record, auth.site);
+    if (scopeReject !== undefined) {
+      return json({ ok: false, reason: scopeReject }, statusFor(scopeReject));
     }
 
     const outbox = parseOutboxRecord(record);
     if (!outbox.ok) {
-      return json({ ok: false, reason: outbox.reason }, 400);
-    }
-
-    if (options.outboxWriter) {
-      const written = await options.outboxWriter.write(outbox.record);
-      if (!written.ok) {
-        return json({ ok: false, reason: "storage-error", retryable: true }, 503);
-      }
-      return json(
-        { ok: true, eventId: written.eventId, duplicate: written.duplicate, source: "outbox" },
-        202,
-      );
+      return json({ ok: false, reason: outbox.reason }, statusFor(outbox.reason));
     }
 
     const contract = options.createContractOptions(auth.site);
-    const eventId = eventIdFromOutboxId(outbox.record.outboxId);
-    const submitted = {
-      appId: auth.site.appId,
-      id: eventId,
-      name: outbox.record.eventName,
-      schemaVersion: outbox.record.schemaVersion,
-      origin: "server" as const,
-      collectedAt: outbox.record.occurredAt,
-      businessSubject: outbox.record.subject,
-      properties: {
-        ...outbox.record.properties,
-        ...(outbox.record.pseudonymousAccountRef !== undefined
-          ? { pseudonymous_account_ref: outbox.record.pseudonymousAccountRef }
-          : {}),
-      },
-    };
-    const prepared = await prepareContractEnvelope(contract, submitted);
+    const prepared = await prepareValidatedOutboxEnvelope(auth.site, contract, outbox.record);
     if (!prepared.ok) {
       return json({ ok: false, reason: prepared.reason }, statusFor(prepared.reason));
     }
     if (!prepared.envelope) {
       return json({ ok: false, reason: "invalid-payload" }, 400);
     }
+
+    if (options.outboxWriter) {
+      const written = await options.outboxWriter.write({
+        record: outbox.record,
+        envelope: prepared.envelope,
+      });
+      if (!written.ok) {
+        if (written.reason === "storage-error") {
+          return json(
+            { ok: false, reason: "storage-error", retryable: written.retryable ?? true },
+            503,
+          );
+        }
+        return json(
+          { ok: false, reason: written.reason, eventId: prepared.envelope.event_id },
+          statusFor(written.reason),
+        );
+      }
+      return json(
+        {
+          ok: true,
+          eventId: written.eventId,
+          duplicate: written.duplicate,
+          source: "outbox",
+        },
+        202,
+      );
+    }
+
     const stored = await options.batchAcceptance.acceptBatch([prepared.envelope]);
     if (!stored.ok) {
       return json({ ok: false, reason: "storage-error", retryable: true }, 503);
     }
     const outcome = stored.outcomes[0];
+    if (outcome === undefined) {
+      return json({ ok: false, reason: "invalid-payload" }, 400);
+    }
+    if (outcome.status === "rejected") {
+      return json(
+        { ok: false, reason: outcome.reason, eventId: outcome.event_id },
+        statusFor(outcome.reason),
+      );
+    }
     return json(
       {
         ok: true,
-        eventId: prepared.envelope.event_id,
-        duplicate: outcome?.status === "accepted" ? outcome.duplicate : false,
+        eventId: outcome.event_id,
+        duplicate: outcome.duplicate,
       },
       202,
     );
@@ -182,13 +214,21 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined => {
   return undefined;
 };
 
-const statusFor = (reason: IngestRejectReason): number => {
+export const statusForServerCollectReject = (
+  reason: IngestRejectReason | "invalid-payload",
+): number => {
   if (reason === "producer-not-allowed") return 403;
   if (reason === "forbidden-producer-field") return 403;
+  if (reason === "consent-denied") return 403;
+  if (reason === "storage-error") return 503;
+  if (reason === "payload-too-large") return 413;
+  if (reason === "payload-conflict") return 409;
   return 400;
 };
 
-const json = (body: unknown, status: number): Response =>
+const statusFor = statusForServerCollectReject;
+
+const json = (body: ServerCollectResponseBody, status: number): Response =>
   new Response(JSON.stringify(sanitizeForLog(body)), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },

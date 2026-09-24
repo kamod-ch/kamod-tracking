@@ -16,6 +16,7 @@ export const jobListingViewV1 = defineEvent<JobListingViewProperties>({
   schema_version: 1,
   producers: ["browser"],
   privacyClass: "public",
+  collectionPurpose: "measurement",
   maxPayloadBytes: 2048,
   fields: [
     { kind: "path", key: "path", required: true },
@@ -29,6 +30,7 @@ export const jobApplyClickV1 = defineEvent<JobApplyClickProperties>({
   schema_version: 1,
   producers: ["browser"],
   privacyClass: "internal",
+  collectionPurpose: "analytics",
   maxPayloadBytes: 1024,
   fields: [
     { kind: "path", key: "path", required: true },

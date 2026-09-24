@@ -80,7 +80,7 @@ describe("contract ingest", () => {
     }
   });
 
-  it("deduplicates on event_id for retries", async () => {
+  it("deduplicates on event_id for identical retries", async () => {
     const { pipeline, envelopeStore } = setup();
     const payload = {
       appId: "site_devjobs",
@@ -93,6 +93,66 @@ describe("contract ingest", () => {
     const first = await pipeline.ingest(payload);
     const second = await pipeline.ingest(payload);
     expect(first.ok && second.ok).toBe(true);
+    expect(envelopeStore.list()).toHaveLength(1);
+  });
+
+  it("rejects missing event ids instead of minting storage ids", async () => {
+    const consents = createMemoryConsentStore();
+    const registry = createEventRegistry();
+    registerContentViewEvents(registry);
+    const envelopeStore = createMemoryEnvelopeStore();
+    const pipeline = createTrackingPipeline({
+      appId: "site_devjobs",
+      store: createMemoryEventStore(),
+      consents,
+      registry,
+      collector,
+      envelopeStore,
+      clock,
+    });
+    recordConsent({
+      store: consents,
+      appId: "site_devjobs",
+      purpose: "analytics",
+      state: "granted",
+      recordedAt: "2026-09-21T12:00:00.000Z",
+    });
+    const result = await pipeline.ingest({
+      appId: "site_devjobs",
+      name: "content.view",
+      schemaVersion: 1,
+      origin: "browser",
+      properties: { path: "/about", content_type: "page" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("invalid-payload");
+    }
+  });
+
+  it("returns payload-conflict when the same id carries different content", async () => {
+    const { pipeline, envelopeStore } = setup();
+    const first = await pipeline.ingest({
+      appId: "site_devjobs",
+      name: "content.view",
+      schemaVersion: 1,
+      origin: "browser",
+      id: "evt_contract",
+      properties: { path: "/about", content_type: "page" },
+    });
+    expect(first.ok).toBe(true);
+    const second = await pipeline.ingest({
+      appId: "site_devjobs",
+      name: "content.view",
+      schemaVersion: 1,
+      origin: "browser",
+      id: "evt_contract",
+      properties: { path: "/jobs", content_type: "page" },
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.reason).toBe("payload-conflict");
+    }
     expect(envelopeStore.list()).toHaveLength(1);
   });
 });

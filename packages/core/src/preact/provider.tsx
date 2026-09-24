@@ -77,6 +77,12 @@ export const TrackingProvider = ({
         }
         return observer.observe(target, options);
       },
+      confirmImpression(subjectKey) {
+        ensureObserver()?.confirmImpression(subjectKey);
+      },
+      cancelImpression(subjectKey) {
+        ensureObserver()?.cancelImpression(subjectKey);
+      },
     };
   }, []);
 
@@ -96,10 +102,18 @@ export const TrackingProvider = ({
 
   useEffect(() => {
     syncConsent(client, "analytics", analyticsConsent);
+    if (analyticsConsent === "denied") {
+      observerRef.current?.disconnectAll();
+      observerRef.current = undefined;
+    }
   }, [client, analyticsConsent]);
 
   useEffect(() => {
     syncConsent(client, "measurement", measurementConsent);
+    if (measurementConsent === "denied") {
+      observerRef.current?.disconnectAll();
+      observerRef.current = undefined;
+    }
   }, [client, measurementConsent]);
 
   const value = useMemo((): TrackingContextValue => ({ client, visibility }), [client, visibility]);

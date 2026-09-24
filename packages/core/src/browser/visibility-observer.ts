@@ -62,6 +62,8 @@ export const createVisibilityImpressionObserver = (
 ): {
   observe(target: Element, targetOptions: VisibilityTargetOptions): VisibilityObserverHandle;
   disconnectAll(): void;
+  confirmImpression(subjectKey: string): void;
+  cancelImpression(subjectKey: string): void;
 } => {
   const rule = resolveVisibilityMeasurementRule(options.rule);
   const now = options.now ?? (() => Date.now());
@@ -79,7 +81,17 @@ export const createVisibilityImpressionObserver = (
     });
 
   const targets = new Map<Element, TargetState>();
+  const inflightSubjects = new Set<string>();
   let documentListener: (() => void) | undefined;
+
+  const clearAllPending = (): void => {
+    inflightSubjects.clear();
+    for (const state of targets.values()) {
+      clearPending(state);
+    }
+  };
+
+  options.lifecycle.onViewChange(clearAllPending);
 
   const isQualifiedSample = (ratio: number, documentVisible: boolean): boolean =>
     documentVisible && ratio >= rule.minVisibleRatio;
@@ -111,6 +123,34 @@ export const createVisibilityImpressionObserver = (
     }, remainingMs);
   };
 
+  const unobserveSubjectTargets = (subjectKey: string): void => {
+    for (const [target, state] of targets) {
+      if (state.subjectKey !== subjectKey) {
+        continue;
+      }
+      clearPending(state);
+      io?.unobserve(target);
+    }
+  };
+
+  const confirmImpression = (subjectKey: string): void => {
+    if (!inflightSubjects.has(subjectKey)) {
+      return;
+    }
+    options.lifecycle.markSubjectCounted(subjectKey);
+    inflightSubjects.delete(subjectKey);
+    unobserveSubjectTargets(subjectKey);
+  };
+
+  const cancelImpression = (subjectKey: string): void => {
+    inflightSubjects.delete(subjectKey);
+    for (const [, state] of targets) {
+      if (state.subjectKey === subjectKey) {
+        clearPending(state);
+      }
+    }
+  };
+
   const tryEmitImpression = (target: Element, state: TargetState): void => {
     if (!isQualifiedSample(state.ratio, getDocumentVisible())) {
       clearPending(state);
@@ -137,7 +177,9 @@ export const createVisibilityImpressionObserver = (
       io?.unobserve(target);
       return;
     }
-    options.lifecycle.markSubjectCounted(state.subjectKey);
+    if (inflightSubjects.has(state.subjectKey)) {
+      return;
+    }
     const payload = {
       subjectKey: state.subjectKey,
       claimedRuleVersion: rule.version,
@@ -145,9 +187,9 @@ export const createVisibilityImpressionObserver = (
       surface: active.surface,
     };
     const notify = state.onImpression ?? options.onImpression;
+    inflightSubjects.add(state.subjectKey);
     notify?.(payload);
     clearPending(state);
-    io?.unobserve(target);
   };
 
   const evaluateTarget = (target: Element, state: TargetState, ratio: number): void => {
@@ -215,9 +257,7 @@ export const createVisibilityImpressionObserver = (
   };
 
   const disconnectAll = (): void => {
-    for (const state of targets.values()) {
-      clearPending(state);
-    }
+    clearAllPending();
     targets.clear();
     io?.disconnect();
     documentListener?.();
@@ -254,6 +294,8 @@ export const createVisibilityImpressionObserver = (
       };
     },
     disconnectAll,
+    confirmImpression,
+    cancelImpression,
   };
 };
 

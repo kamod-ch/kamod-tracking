@@ -13,9 +13,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PNPM_VERSION: "11.25.0"
+
 jobs:
   quality:
-    name: Typecheck, Lint, Format, Test, Build
+    name: Typecheck, Lint, Format, Unit tests, Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -23,6 +26,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,7 +47,7 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
-      - name: Test
+      - name: Unit tests (no PostgreSQL)
         run: pnpm test
 
       - name: Build
@@ -50,3 +55,43 @@ jobs:
 
       - name: Packed export consumer
         run: pnpm check:exports
+
+  postgres:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tracking
+          POSTGRES_PASSWORD: tracking
+          POSTGRES_DB: tracking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tracking -d tracking_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      TRACKING_TEST_DATABASE_URL: postgres://tracking:tracking@localhost:5432/tracking_test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: PostgreSQL integration tests
+        run: pnpm test:postgres

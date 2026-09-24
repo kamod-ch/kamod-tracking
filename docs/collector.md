@@ -14,8 +14,11 @@ Framework-independent `Request`/`Response` handlers live in `@kamod-ch/tracking/
 
 - `createServerCollectHandler` with bearer token or custom verifier.
 - Business / trusted events must not use the browser endpoint.
-- Outbox records map to stable `eventIdFromOutboxId(outboxId)` for replay-safe writes.
-- Optional `OutboxEventWriter` hook — the SDK does not execute business transactions.
+- Auth fixes tenant/site/app scope; payloads must not override `tenantId`, `siteId`, `appId`, or claim `browser` producer.
+- Outbox records are validated (registry, producer, purpose, subject, site) **before** optional `OutboxEventWriter.write()` or `batchAcceptance`.
+- Stable ids: `eventIdFromOutboxId(outboxId)` for replay-safe writes.
+- Permanent validation failures return **4xx** (not retryable **503**). Adapter `rejected` outcomes (e.g. `payload-conflict`) are returned to callers. Storage failures return **503** with `retryable: true`.
+- Optional `OutboxEventWriter` receives `{ record, envelope }` after validation — the SDK does not execute business transactions. Application outbox tables live in your service; see `examples/server-outbox-postgres/domain-outbox-worker.mjs`.
 
 ## Batch response
 

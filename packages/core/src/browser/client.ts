@@ -9,11 +9,13 @@ import {
 } from "../core/capture-policy";
 import {
   createMemoryConsentStore,
+  isCollectionAllowed,
   recordConsent,
   readConsentState,
   UNSPECIFIED_LEGAL_BASIS,
 } from "../core/consent";
 import { resolveCaptureIdentity } from "../core/config";
+import { resolveEventCollectionPurpose } from "../core/collection-purpose";
 import type { BusinessSubject, SessionRef } from "../core/envelope";
 import { prepareContractEnvelope, type ContractIngestOptions } from "../core/contract-ingest";
 import { createMemoryEnvelopeStore } from "../core/envelope-store";
@@ -35,7 +37,11 @@ import type {
 } from "../core/types";
 import { createAbortRegistry } from "./abort-registry";
 import { computeRetryDelayMs, isPermanentRejectReason } from "./backoff";
-import { createCollectorTransport, type CollectorTransport } from "./collector-transport";
+import {
+  bindNavigatorSendBeacon,
+  createCollectorTransport,
+  type CollectorTransport,
+} from "./collector-transport";
 import { createDebugLogger } from "./debug-log";
 import {
   createEventQueue,
@@ -45,6 +51,7 @@ import {
   type QueuedCollectorEvent,
 } from "./event-queue";
 import { clearBrowserSession, resolveBrowserSessionId } from "./session-store";
+import { safeKeyValueStorage } from "./storage-guard";
 import { createUnloadHooks } from "./unload-hooks";
 import { createViewImpressionState } from "./view-state";
 import { createViewLifecycle, type ViewLifecycle } from "./view-lifecycle";
@@ -110,6 +117,16 @@ export type BrowserClient = Tracker & {
 const STORAGE_PREFIX = "kamod-tracking";
 export const DEFAULT_BROWSER_MAX_RETRIES = 3;
 
+const COLLECTION_PURPOSES = ["analytics", "measurement"] as const;
+
+const hasGrantedCollectionPurpose = (input: {
+  readonly consents: ConsentStore;
+  readonly appId: string;
+}): boolean =>
+  COLLECTION_PURPOSES.some(
+    (purpose) => readConsentState(input.consents, input.appId, purpose) === "granted",
+  );
+
 export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserClient => {
   const consents = options.consents ?? createMemoryConsentStore();
   const identityMode = resolveCaptureIdentity(options);
@@ -131,6 +148,7 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
   const ids = options.ids ?? cryptoIdFactory;
   const viewState = createViewImpressionState();
   const viewLifecycle = options.viewLifecycle ?? createViewLifecycle();
+  const tabSessionMemory = createMemoryKeyValueStorage();
   const debug = createDebugLogger(options.debug === true);
   const unloadHooks = createUnloadHooks();
   const discardListeners = new Set<
@@ -176,14 +194,16 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
             ...(options.publicKey !== undefined ? { publicKey: options.publicKey } : {}),
             ...(getBrowserRuntime()?.fetch ? { fetchImpl: getBrowserRuntime()!.fetch } : {}),
             ...(getBrowserRuntime()?.navigator?.sendBeacon
-              ? { sendBeacon: getBrowserRuntime()!.navigator!.sendBeacon! }
+              ? {
+                  sendBeacon: bindNavigatorSendBeacon(getBrowserRuntime()!.navigator!),
+                }
               : {}),
             createAbortSignal: () => abortRegistry.createSignal(),
           })
         : undefined);
 
   const notifyDiscard = (eventId: string, reason: BrowserDiscardReason, detail?: string): void => {
-    debug.log("discard", { eventId, reason, ...(detail ? { detail } : {}) });
+    debug.log("discard", { reason, ...(detail ? { detail } : {}) });
     for (const listener of discardListeners) {
       try {
         listener({ eventId, reason, ...(detail !== undefined ? { detail } : {}) });
@@ -198,6 +218,20 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
   const sessionStorageKey = `${STORAGE_PREFIX}:${options.appId}:sid`;
   const legacyVisitorKey = `${STORAGE_PREFIX}:${options.appId}:vid`;
 
+  const resolveSessionStorage = (): KeyValueStorage => {
+    if (options.sessionStorage) {
+      return safeKeyValueStorage(options.sessionStorage);
+    }
+    if (options.storage) {
+      return safeKeyValueStorage(options.storage);
+    }
+    const runtimeSession = getBrowserRuntime()?.sessionStorage;
+    if (runtimeSession) {
+      return safeKeyValueStorage(runtimeSession);
+    }
+    return tabSessionMemory;
+  };
+
   const resolveSession = (purpose: Purpose) => {
     if (capturePolicy.identityMode !== "session") {
       return undefined;
@@ -205,7 +239,7 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
     if (readConsentState(consents, options.appId, purpose) !== "granted") {
       return undefined;
     }
-    const storage = options.sessionStorage ?? options.storage ?? trySessionStorage();
+    const storage = resolveSessionStorage();
     const nowMs = (options.now ?? systemClock.now)().getTime();
     const sessionId = resolveBrowserSessionId({
       storage,
@@ -233,78 +267,102 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
     }, delayMs);
   };
 
+  const requeueBatchForRetry = (
+    batch: readonly QueuedCollectorEvent[],
+    retryAfterSeconds?: number,
+  ): void => {
+    const retriable = batch
+      .map((entry) => ({ ...entry, retryAttempt: entry.retryAttempt + 1 }))
+      .filter((entry) => {
+        if (entry.retryAttempt > maxRetries) {
+          notifyDiscard(entry.event_id, "offline");
+          return false;
+        }
+        return true;
+      });
+    if (retriable.length === 0) {
+      return;
+    }
+    queue.requeue(retriable);
+    scheduleRetry(retryAfterSeconds, retriable[0]?.retryAttempt ?? 0);
+  };
+
   const runOneFlush = async (unload: boolean): Promise<number> => {
     if (destroyed || sendingStopped || !capturePolicy.networkSendingEnabled || !transport) {
       return 0;
     }
     let flushed = 0;
-    try {
-      const nowMs = (options.now ?? systemClock.now)().getTime();
-      const batch = queue.takeBatch(queueLimits.maxBatchSize, nowMs);
-      if (batch.length === 0) {
-        return 0;
+    const nowMs = (options.now ?? systemClock.now)().getTime();
+    const batch = queue.takeBatch(queueLimits.maxBatchSize, nowMs);
+    if (batch.length === 0) {
+      return 0;
+    }
+    const batchIds = new Set(batch.map((entry) => entry.event_id));
+
+    const result = await transport.sendBatch(batch, { unload });
+
+    if (result.delivery === "verified" && result.outcomes) {
+      const acceptedIds: string[] = [];
+      const toRetry: QueuedCollectorEvent[] = [];
+      for (const outcome of result.outcomes) {
+        if (!batchIds.has(outcome.event_id)) {
+          continue;
+        }
+        const queued = batch.find((entry) => entry.event_id === outcome.event_id);
+        if (!queued) {
+          continue;
+        }
+        if (outcome.status === "accepted") {
+          acceptedIds.push(outcome.event_id);
+          flushed += 1;
+          continue;
+        }
+        if (isPermanentRejectReason(outcome.reason)) {
+          notifyDiscard(outcome.event_id, "server-rejected", outcome.reason);
+          continue;
+        }
+        if (queued.retryAttempt >= maxRetries) {
+          notifyDiscard(outcome.event_id, "server-rejected", outcome.reason);
+          continue;
+        }
+        toRetry.push({ ...queued, retryAttempt: queued.retryAttempt + 1 });
       }
-      const result = await transport.sendBatch(batch, { unload });
-      if (result.delivery === "verified" && result.outcomes) {
-        const acceptedIds: string[] = [];
-        const toRetry: QueuedCollectorEvent[] = [];
-        for (const outcome of result.outcomes) {
-          if (outcome.status === "accepted") {
-            acceptedIds.push(outcome.event_id);
-            flushed += 1;
-            continue;
-          }
-          const queued = batch.find((entry) => entry.event_id === outcome.event_id);
-          if (!queued) {
-            continue;
-          }
-          if (isPermanentRejectReason(outcome.reason)) {
-            notifyDiscard(outcome.event_id, "server-rejected", outcome.reason);
-            continue;
-          }
-          if (queued.retryAttempt >= maxRetries) {
-            notifyDiscard(outcome.event_id, "server-rejected", outcome.reason);
-            continue;
-          }
-          toRetry.push({ ...queued, retryAttempt: queued.retryAttempt + 1 });
+      for (const entry of batch) {
+        if (result.outcomes.some((outcome) => outcome.event_id === entry.event_id)) {
+          continue;
         }
-        queue.removeByIds(acceptedIds);
-        if (toRetry.length > 0) {
-          queue.requeue(toRetry);
-          scheduleRetry(result.retryAfterSeconds, toRetry[0]?.retryAttempt ?? 0);
+        if (entry.retryAttempt >= maxRetries) {
+          notifyDiscard(entry.event_id, "offline");
+          continue;
         }
+        toRetry.push({ ...entry, retryAttempt: entry.retryAttempt + 1 });
+      }
+      queue.removeByIds(acceptedIds);
+      if (toRetry.length > 0) {
+        queue.requeue(toRetry);
+        scheduleRetry(result.retryAfterSeconds, toRetry[0]?.retryAttempt ?? 0);
         return flushed;
       }
-
-      if (result.delivery === "browser-accepted") {
-        queue.removeByIds(batch.map((entry) => entry.event_id));
-        debug.log("beacon-browser-accepted-not-verified", { count: batch.length });
-        return batch.length;
-      }
-
-      if (result.retryable) {
-        const retriable = batch
-          .map((entry) => ({ ...entry, retryAttempt: entry.retryAttempt + 1 }))
-          .filter((entry) => {
-            if (entry.retryAttempt > maxRetries) {
-              notifyDiscard(entry.event_id, "offline");
-              return false;
-            }
-            return true;
-          });
-        queue.requeue(retriable);
-        scheduleRetry(result.retryAfterSeconds, retriable[0]?.retryAttempt ?? 0);
-      } else {
-        for (const entry of batch) {
-          notifyDiscard(entry.event_id, "server-rejected", "batch-failed");
-        }
-      }
-      return 0;
-    } finally {
-      if (!destroyed && queue.size() > 0 && !sendingStopped) {
+      if (queue.size() > 0) {
         void flushInternal(unload);
       }
+      return flushed;
     }
+
+    if (result.delivery === "browser-accepted") {
+      queue.removeByIds(batch.map((entry) => entry.event_id));
+      debug.log("beacon-browser-accepted-not-verified", { count: batch.length });
+      return batch.length;
+    }
+
+    if (result.retryable) {
+      requeueBatchForRetry(batch, result.retryAfterSeconds);
+    } else {
+      for (const entry of batch) {
+        notifyDiscard(entry.event_id, "server-rejected", "batch-failed");
+      }
+    }
+    return flushed;
   };
 
   const flushInternal = (unload = false): Promise<number> => {
@@ -343,11 +401,38 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
     };
   };
 
+  const resolveCapturePurpose = (
+    input: BrowserCaptureInput,
+  ):
+    | { ok: true; purpose: Purpose }
+    | { ok: false; reason: "invalid-payload" | "unknown-event" } => {
+    if (!options.registry) {
+      return { ok: true, purpose: input.purpose ?? "analytics" };
+    }
+    const definition = options.registry.get(input.event_name, input.schema_version);
+    if (!definition) {
+      return { ok: false, reason: "unknown-event" };
+    }
+    const purpose = resolveEventCollectionPurpose(definition);
+    if (input.purpose !== undefined && input.purpose !== purpose) {
+      return { ok: false, reason: "invalid-payload" };
+    }
+    return { ok: true, purpose };
+  };
+
   const capture = async (input: BrowserCaptureInput): Promise<IngestResult> => {
-    if (destroyed || sendingStopped) {
+    if (destroyed) {
       return { ok: false, reason: "capture-disabled" };
     }
-    const purpose = input.purpose ?? "analytics";
+    const purposeResult = resolveCapturePurpose(input);
+    if (!purposeResult.ok) {
+      return { ok: false, reason: purposeResult.reason };
+    }
+    const purpose = purposeResult.purpose;
+    const consent = readConsentState(consents, options.appId, purpose);
+    if (!isCollectionAllowed(consent, purpose)) {
+      return { ok: false, reason: "consent-denied" };
+    }
     const eventId = input.event_id ?? ids.eventId();
     const contract = contractOptions();
     if (!contract) {
@@ -374,6 +459,10 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
     if (!prepared.envelope) {
       return { ok: false, reason: "invalid-payload" };
     }
+    const consentAfter = readConsentState(consents, options.appId, purpose);
+    if (!isCollectionAllowed(consentAfter, purpose)) {
+      return { ok: false, reason: "consent-denied" };
+    }
     return enqueueValidated({
       event_id: prepared.envelope.event_id,
       appId: options.appId,
@@ -390,22 +479,17 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
   };
 
   const revokeSideEffects = (purpose: Purpose): void => {
-    sendingStopped = true;
-    queue.clear();
+    queue.removeByPurpose(purpose);
     if (retryTimer !== undefined) {
       clearTimeout(retryTimer);
       retryTimer = undefined;
     }
     abortRegistry.abortAll();
-    viewState.reset();
-    viewLifecycle.reset();
-    notifyDiscard("queue", "consent-revoked", purpose);
-    const storage = options.sessionStorage ?? options.storage ?? trySessionStorage();
-    clearBrowserSession(storage, sessionStorageKey);
-    try {
-      options.storage?.setItem(legacyVisitorKey, "");
-    } catch {
-      // ignore
+    if (purpose === "analytics") {
+      viewState.reset();
+    }
+    if (purpose === "measurement") {
+      viewLifecycle.reset();
     }
     recordConsent({
       store: consents,
@@ -414,6 +498,16 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
       state: "denied",
       recordedAt: toIso((options.now ?? systemClock.now)()),
     });
+    if (!hasGrantedCollectionPurpose({ consents, appId: options.appId })) {
+      notifyDiscard("queue", "consent-revoked", purpose);
+      const storage = resolveSessionStorage();
+      clearBrowserSession(storage, sessionStorageKey);
+      try {
+        options.storage?.setItem(legacyVisitorKey, "");
+      } catch {
+        // ignore
+      }
+    }
   };
 
   if (options.enableUnloadFlush === true) {
@@ -460,19 +554,26 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
     },
     async pageView(input) {
       const path = sanitizePath(input.path);
-      if (capturePolicy.identityMode === "none" && !viewState.shouldRecordPageImpression(path)) {
+      if (capturePolicy.identityMode === "none" && !viewState.canRecordPageImpression(path)) {
         return { ok: false, reason: "duplicate-impression" };
       }
       if (options.registry) {
-        return capture({
+        const result = await capture({
           event_name: "content.view",
           schema_version: 1,
-          purpose: "analytics",
           properties: { path, content_type: "page", ...input.properties },
           ...(input.collectedAt !== undefined ? { occurred_at: input.collectedAt } : {}),
         });
+        if (result.ok && capturePolicy.identityMode === "none") {
+          viewState.commitPageImpression(path);
+        }
+        return result;
       }
-      return legacyPageView(path, input);
+      const legacyResult = await legacyPageView(path, input);
+      if (legacyResult.ok && capturePolicy.identityMode === "none") {
+        viewState.commitPageImpression(path);
+      }
+      return legacyResult;
     },
     async track(input) {
       if (options.registry && input.name === "content.view") {
@@ -494,7 +595,6 @@ export const createBrowserTracker = (options: BrowserTrackerOptions): BrowserCli
         revokeSideEffects(purpose);
         return;
       }
-      sendingStopped = false;
       recordConsent({
         store: consents,
         appId: options.appId,
@@ -728,20 +828,15 @@ export const toBrowserIngestPayload = (event: TrackingEvent): Record<string, unk
 
 type BrowserRuntime = {
   readonly sessionStorage?: KeyValueStorage;
-  readonly localStorage?: KeyValueStorage;
   readonly fetch: typeof fetch;
-  readonly navigator?: { sendBeacon?: (url: string, data?: string) => boolean };
+  readonly navigator?: Navigator;
 };
-
-const trySessionStorage = (): KeyValueStorage | undefined =>
-  getBrowserRuntime()?.sessionStorage ?? getBrowserRuntime()?.localStorage;
 
 const getBrowserRuntime = (): BrowserRuntime | undefined => {
   const global = globalThis as typeof globalThis & {
     sessionStorage?: KeyValueStorage;
-    localStorage?: KeyValueStorage;
-    navigator?: { sendBeacon?: (url: string, data?: string) => boolean };
     fetch?: typeof fetch;
+    navigator?: Navigator;
   };
   if (typeof global.fetch !== "function") {
     return undefined;
@@ -749,7 +844,6 @@ const getBrowserRuntime = (): BrowserRuntime | undefined => {
   return {
     fetch: global.fetch,
     ...(global.sessionStorage !== undefined ? { sessionStorage: global.sessionStorage } : {}),
-    ...(global.localStorage !== undefined ? { localStorage: global.localStorage } : {}),
     ...(global.navigator !== undefined ? { navigator: global.navigator } : {}),
   };
 };

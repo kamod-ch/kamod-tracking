@@ -26,7 +26,8 @@
     "e2e:smoke": "pnpm build:core && node ./scripts/e2e-smoke.mjs",
     "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm test:examples && pnpm build && pnpm check:exports && pnpm measure:bundle && pnpm e2e:smoke",
     "test:postgres": "pnpm --filter @kamod-ch/tracking test:postgres",
-    "test:examples": "pnpm build:core && node --experimental-strip-types examples/devjobs/registry.test.mjs && node examples/vanilla-browser/demo.mjs && node examples/server-outbox-postgres/outbox-demo.mjs && node examples/preact-consent-visibility/smoke-export.mjs",
+    "test:examples": "pnpm build:core && node --experimental-strip-types examples/devjobs/registry.test.mjs && node examples/vanilla-browser/demo.mjs && pnpm --filter @kamod-tracking/example-server-outbox-postgres test && node examples/preact-consent-visibility/smoke-export.mjs",
+    "verify:all": "pnpm verify && node ./scripts/verify-postgres.mjs",
     "check:exports": "node ./scripts/check-packed-exports.mjs",
     "pack:core": "pnpm --filter @kamod-ch/tracking exec npm pack --dry-run",
     "publish:core": "node -e \"console.error('Publishing is out of scope for this workspace.'); process.exit(1)\""

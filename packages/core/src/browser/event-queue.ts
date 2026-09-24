@@ -34,6 +34,7 @@ export type EventQueue = {
   takeBatch(maxSize: number, nowMs: number): QueuedCollectorEvent[];
   requeue(events: readonly QueuedCollectorEvent[]): void;
   removeByIds(ids: readonly string[]): void;
+  removeByPurpose(purpose: Purpose): void;
   clear(): void;
   size(): number;
   onDiscard(listener: (input: { eventId: string; reason: QueueDiscardReason }) => void): () => void;
@@ -97,6 +98,15 @@ export const createEventQueue = (limits: QueueLimits = {}): EventQueue => {
       for (let i = items.length - 1; i >= 0; i -= 1) {
         const item = items[i];
         if (item && drop.has(item.event_id)) {
+          items.splice(i, 1);
+        }
+      }
+    },
+    removeByPurpose(purpose) {
+      for (let i = items.length - 1; i >= 0; i -= 1) {
+        const item = items[i];
+        if (item && item.purpose === purpose) {
+          notify(item.event_id, "consent-revoked");
           items.splice(i, 1);
         }
       }

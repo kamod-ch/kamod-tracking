@@ -1,6 +1,6 @@
-# Example: vanilla JavaScript (no Preact)
+# Example: vanilla JavaScript (memory demo — no PostgreSQL)
 
-Demonstrates consent-gated capture with `@kamod-ch/tracking/browser` only — no Preact peer.
+Demonstrates consent-gated capture with `@kamod-ch/tracking/browser` and an **in-memory** collector transport. For the browser collector with a **real PostgreSQL batch adapter**, see [collector-postgres](../collector-postgres/README.md).
 
 ```sh
 pnpm install   # from repo root

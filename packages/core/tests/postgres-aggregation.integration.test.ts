@@ -1,7 +1,5 @@
-import { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { formatLocalDate } from "../src/aggregation/time-bucketing";
-import { applyTrackingMigrations, resetTrackingSchema } from "../src/postgres/migrate";
 import {
   markAggregateDirtyDay,
   readRawWatermark,
@@ -12,8 +10,10 @@ import { incrementOpsCounter } from "../src/postgres/ops-metrics";
 import { runPurposeRetention } from "../src/postgres/retention";
 import { createScopedPostgresEnvelopeStore, seedTrackingSite } from "../src/postgres/scoped-store";
 import type { TrackingEventEnvelope } from "../src/core/envelope";
+import { postgresPool, registerPostgresIntegrationHooks } from "./postgres-test-fixture";
 
-const databaseUrl = process.env.TRACKING_TEST_DATABASE_URL;
+registerPostgresIntegrationHooks();
+
 const scope = { tenantId: "tenant_agg", siteId: "site_agg" };
 const tz = "Europe/Zurich";
 
@@ -38,38 +38,9 @@ const envelope = (overrides: Partial<TrackingEventEnvelope> = {}): TrackingEvent
   ...overrides,
 });
 
-let pool: Pool | undefined;
-let postgresReady = false;
-
-beforeAll(async () => {
-  if (!databaseUrl) {
-    return;
-  }
-  const candidate = new Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 4_000 });
-  try {
-    const client = await candidate.connect();
-    await client.query("SELECT 1");
-    await resetTrackingSchema(client);
-    client.release();
-    await applyTrackingMigrations(candidate, { includeRoles: false });
-    pool = candidate;
-    postgresReady = true;
-  } catch {
-    await candidate.end().catch(() => undefined);
-  }
-}, 20_000);
-
-afterAll(async () => {
-  await pool?.end();
-});
-
-const itPg = it.skipIf(!postgresReady);
-
 describe("postgres aggregation (integration)", () => {
   beforeEach(async () => {
-    if (!pool) {
-      return;
-    }
+    const pool = postgresPool();
     await pool.query("DELETE FROM tracking.daily_aggregates");
     await pool.query("DELETE FROM tracking.aggregate_dirty_days");
     await pool.query("DELETE FROM tracking.raw_data_watermark");
@@ -88,13 +59,14 @@ describe("postgres aggregation (integration)", () => {
     );
   });
 
-  itPg("rolls up daily counts and recomputes idempotently", async () => {
-    const store = createScopedPostgresEnvelopeStore({ pool: pool!, ...scope });
+  it("rolls up daily counts and recomputes idempotently", async () => {
+    const pool = postgresPool();
+    const store = createScopedPostgresEnvelopeStore({ pool, ...scope });
     await store.acceptEnvelope(envelope({ event_id: "evt_1" }));
     await store.acceptEnvelope(
       envelope({ event_id: "evt_2", subject: { objectType: "article", objectId: "art_1" } }),
     );
-    const client = await pool!.connect();
+    const client = await pool.connect();
     try {
       await upsertRawWatermark(
         client,
@@ -114,12 +86,12 @@ describe("postgres aggregation (integration)", () => {
       purpose: "analytics" as const,
       collectionPolicyMode: "session" as const,
     };
-    const first = await runDailyCountAggregate(pool!, job);
+    const first = await runDailyCountAggregate(pool, job);
     expect(first.rowsWritten).toBeGreaterThan(0);
-    const second = await runDailyCountAggregate(pool!, job);
+    const second = await runDailyCountAggregate(pool, job);
     expect(second.rowsWritten).toBe(first.rowsWritten);
 
-    const rows = await pool!.query(
+    const rows = await pool.query(
       `SELECT event_count, session_count FROM tracking.daily_aggregates
        WHERE tenant_id = $1 AND site_id = $2 AND local_date = '2026-03-29'::date`,
       [scope.tenantId, scope.siteId],
@@ -127,10 +99,11 @@ describe("postgres aggregation (integration)", () => {
     expect(Number(rows.rows[0]?.event_count)).toBe(2);
   });
 
-  itPg("clears a day when purge removed all underlying events", async () => {
-    const store = createScopedPostgresEnvelopeStore({ pool: pool!, ...scope });
+  it("clears a day when purge removed all underlying events", async () => {
+    const pool = postgresPool();
+    const store = createScopedPostgresEnvelopeStore({ pool, ...scope });
     await store.acceptEnvelope(envelope({ event_id: "evt_purge" }));
-    const client = await pool!.connect();
+    const client = await pool.connect();
     try {
       await upsertRawWatermark(
         client,
@@ -149,28 +122,31 @@ describe("postgres aggregation (integration)", () => {
       purpose: "analytics" as const,
       collectionPolicyMode: "none" as const,
     };
-    await runDailyCountAggregate(pool!, job);
-    await pool!.query(`DELETE FROM tracking.events WHERE tenant_id = $1 AND site_id = $2`, [
+    await runDailyCountAggregate(pool, job);
+    await pool.query(`DELETE FROM tracking.events WHERE tenant_id = $1 AND site_id = $2`, [
       scope.tenantId,
       scope.siteId,
     ]);
-    await runDailyCountAggregate(pool!, job);
-    const rows = await pool!.query(
+    await runDailyCountAggregate(pool, job);
+    const rows = await pool.query(
       `SELECT COUNT(*)::int AS n FROM tracking.daily_aggregates WHERE tenant_id = $1 AND site_id = $2`,
       [scope.tenantId, scope.siteId],
     );
     expect(rows.rows[0]?.n).toBe(0);
   });
 
-  itPg("skips backfill outside raw watermark without deleting historical aggregates", async () => {
-    await pool!.query(
+  it("skips backfill outside raw watermark without deleting historical aggregates", async () => {
+    const pool = postgresPool();
+    await pool.query(
       `INSERT INTO tracking.daily_aggregates (
-         tenant_id, site_id, local_date, time_zone, aggregate_rule_version,
+         tenant_id, site_id, purpose, local_date, time_zone,
+         aggregate_rule_version, bucket_rule_version,
+         measurement_rule_version, collection_policy_version, surface,
          event_name, subject_object_type, subject_object_id, event_count, session_count, computed_at
-       ) VALUES ($1,$2,'2026-01-01'::date,$3,'daily_counts_v1','content.view','article','art_old',5,NULL,now())`,
+       ) VALUES ($1,$2,'analytics','2026-01-01'::date,$3,'daily_counts_v1','bucket_instant_v1','mr_v1','none','','content.view','article','art_old',5,NULL,now())`,
       [scope.tenantId, scope.siteId, tz],
     );
-    const client = await pool!.connect();
+    const client = await pool.connect();
     try {
       await upsertRawWatermark(
         client,
@@ -180,7 +156,7 @@ describe("postgres aggregation (integration)", () => {
     } finally {
       client.release();
     }
-    const result = await runDailyCountAggregate(pool!, {
+    const result = await runDailyCountAggregate(pool, {
       ...scope,
       timeZone: tz,
       aggregateRuleVersion: "daily_counts_v1",
@@ -190,7 +166,7 @@ describe("postgres aggregation (integration)", () => {
       collectionPolicyMode: "none",
     });
     expect(result.daysSkippedOutsideRaw).toBeGreaterThan(0);
-    const preserved = await pool!.query(
+    const preserved = await pool.query(
       `SELECT event_count FROM tracking.daily_aggregates
        WHERE tenant_id = $1 AND subject_object_id = 'art_old'`,
       [scope.tenantId],
@@ -198,60 +174,74 @@ describe("postgres aggregation (integration)", () => {
     expect(Number(preserved.rows[0]?.event_count)).toBe(5);
   });
 
-  itPg("marks dirty days for late events", async () => {
+  it("marks dirty days for late events", async () => {
+    const pool = postgresPool();
     const localDate = formatLocalDate(new Date("2026-03-28T23:00:00.000Z"), tz);
-    await markAggregateDirtyDay(pool!, {
+    await markAggregateDirtyDay(pool, {
       ...scope,
+      purpose: "analytics",
       localDate,
       timeZone: tz,
+      aggregateRuleVersion: "daily_counts_v1",
       reason: "late_event",
     });
-    const row = await pool!.query(
+    const row = await pool.query(
       `SELECT reason FROM tracking.aggregate_dirty_days WHERE tenant_id = $1`,
       [scope.tenantId],
     );
     expect(row.rows[0]?.reason).toBe("late_event");
   });
 
-  itPg("increments ops counters without high-cardinality labels", async () => {
-    await incrementOpsCounter(pool!, {
+  it("increments ops counters without high-cardinality labels", async () => {
+    const pool = postgresPool();
+    await incrementOpsCounter(pool, {
       ...scope,
       metric: "ingest_accepted",
     });
-    await incrementOpsCounter(pool!, {
+    await incrementOpsCounter(pool, {
       ...scope,
       metric: "ingest_rejected",
       rejectReason: "invalid-payload",
     });
-    const rows = await pool!.query(
+    const rows = await pool.query(
       `SELECT metric, counter FROM tracking.ops_site_counters WHERE tenant_id = $1 ORDER BY metric`,
       [scope.tenantId],
     );
     expect(rows.rowCount).toBe(2);
   });
 
-  itPg("retention updates raw watermark after delete", async () => {
-    const store = createScopedPostgresEnvelopeStore({ pool: pool!, ...scope });
+  it("retention advances recompute floor without deleting boundary when raw is empty", async () => {
+    const pool = postgresPool();
+    const store = createScopedPostgresEnvelopeStore({ pool, ...scope });
     await store.acceptEnvelope(
       envelope({ event_id: "evt_old", received_at: "2026-01-01T00:00:00.000Z" }),
     );
     await store.acceptEnvelope(
       envelope({ event_id: "evt_new", received_at: "2026-06-01T00:00:00.000Z" }),
     );
-    await runPurposeRetention(
-      pool!,
-      {
+    const result = await runPurposeRetention(pool, {
+      policy: {
         ...scope,
         purpose: "analytics",
         rawRetentionDays: 30,
         aggregateRetentionDays: null,
-        inboxRetentionDays: null,
+        inboxRetentionDays: 30,
         lateEventBackfillDays: 3,
         collectionPolicyMode: "none",
       },
-      new Date("2026-06-15T00:00:00.000Z"),
+      now: new Date("2026-06-15T00:00:00.000Z"),
+      timeZoneForCoverage: tz,
+    });
+    expect(result.status).toBe("completed");
+    const boundary = await readRawWatermark(pool, { ...scope, purpose: "analytics" });
+    expect(boundary?.recomputeCompleteFromReceivedAt.toISOString()).toBe(
+      "2026-05-16T00:00:00.000Z",
     );
-    const wm = await readRawWatermark(pool!, { ...scope, purpose: "analytics" });
-    expect(wm?.oldestReceivedAt.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+    expect(boundary?.oldestReceivedAt?.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+    const row = await pool.query(
+      `SELECT 1 FROM tracking.raw_data_watermark WHERE tenant_id = $1 AND purpose = 'analytics'`,
+      [scope.tenantId],
+    );
+    expect(row.rowCount).toBe(1);
   });
 });

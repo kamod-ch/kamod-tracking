@@ -21,6 +21,7 @@ Devjobs app integration (concrete routes, UI, env vars) is documented in the Dev
 | **Cookie banner / jurisdiction automation**             | Host CMP; SDK mirrors consent only                                             |
 | **Person-level unique reach**                           | Not provided without explicit authenticated/server identity design             |
 | **Self-certifying analytics as legally binding**        | SDK explicitly treats browser events as untrusted for proof purposes           |
+| **Email / notification open pixel (1×1 GIF)**           | No concrete Devjobs or core requirement in v0.1 — see [pixel-adapter.md](./pixel-adapter.md) / ADR 0010 |
 | **Automatic data erasure across Postgres + CDN**        | Erasure jobs and policies are operational product concerns                     |
 
 ## Recommended split for Devjobs

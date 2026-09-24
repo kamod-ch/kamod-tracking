@@ -118,7 +118,13 @@ Configured per site in Postgres (`site_data_policy`): raw retention, aggregate r
 
 ## Next steps
 
+- [examples/README.md](../examples/README.md) — memory demos vs PostgreSQL collector example vs product wiring
+- [operational-guarantees.md](./operational-guarantees.md) — transport, consent, session, rebuild semantics
+- [observability.md](./observability.md) — Postgres ops counters tied to ingest/aggregation/retention outcomes
+- [verify-matrix.md](./verify-matrix.md) — `pnpm verify` and `pnpm verify:all` (with Docker PostgreSQL)
 - [preact-integration.md](./preact-integration.md) — provider, hooks, visibility job cards
 - [postgres-adapter.md](./postgres-adapter.md) — migrations and scoped store
+- [migrations.md](./migrations.md) — rollback notes
+- [pixel-adapter.md](./pixel-adapter.md) — why v0.1 has no tracking pixel
 - [implementation-status.md](./implementation-status.md) — what is in v0.1 vs open
 - [devjobs-scope.md](./devjobs-scope.md) — Devjobs.ch integration boundaries

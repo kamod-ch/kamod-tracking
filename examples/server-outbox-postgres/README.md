@@ -9,6 +9,8 @@ pnpm --filter @kamod-tracking/example-server-outbox-postgres test
 
 `outbox-demo.mjs` posts the same `outboxId` twice to `createServerCollectHandler`; the envelope store keeps **one** row (`eventIdFromOutboxId`).
 
+`domain-outbox-worker.mjs` shows an application transaction that writes a job + outbox row atomically, then a worker with lease, retry, quarantine for invalid registry events, crash-after-commit replay, and HTTP collect validation before a custom writer.
+
 ## PostgreSQL adapter
 
 Optional peer `pg`. Import `@kamod-ch/tracking/postgres` only in server/worker code.

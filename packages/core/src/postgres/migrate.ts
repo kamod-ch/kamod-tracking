@@ -9,6 +9,9 @@ const migrationFiles = [
   "001_tracking_schema.sql",
   "002_tracking_roles.sql",
   "003_aggregation_retention.sql",
+  "004_aggregate_dimensions.sql",
+  "005_retention_recompute_boundary.sql",
+  "006_ops_outcome_metrics.sql",
 ] as const;
 
 export const readMigrationSql = (fileName: (typeof migrationFiles)[number]): string =>
@@ -19,7 +22,9 @@ export const applyTrackingMigrations = async (
   options: { readonly includeRoles?: boolean } = {},
 ): Promise<void> => {
   const includeRoles = options.includeRoles ?? true;
-  const files = includeRoles ? migrationFiles : [migrationFiles[0]];
+  const files = includeRoles
+    ? migrationFiles
+    : migrationFiles.filter((name) => name !== "002_tracking_roles.sql");
   await files.reduce<Promise<void>>(async (previous, file) => {
     await previous;
     await pool.query(readMigrationSql(file));

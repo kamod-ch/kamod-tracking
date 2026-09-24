@@ -62,7 +62,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:postgres": "vitest run tests/postgres.integration.test.ts",
+    "test:postgres": "node ./scripts/require-postgres-test-env.mjs && vitest run --config vitest.postgres.config.ts",
     "test:watch": "vitest"
   },
   "devDependencies": {

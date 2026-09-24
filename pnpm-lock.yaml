@@ -24,6 +24,15 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  examples/collector-postgres:
+    dependencies:
+      '@kamod-ch/tracking':
+        specifier: workspace:*
+        version: link:../../packages/core
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+
   examples/devjobs:
     dependencies:
       '@kamod-ch/tracking':

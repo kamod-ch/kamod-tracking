@@ -20,6 +20,7 @@ import {
   TrackingProvider,
   useBrowserTrackingClient,
   usePageView,
+  useTrackingContext,
   useVisibleImpression,
 } from "../src/preact";
 
@@ -39,6 +40,7 @@ const makeTracker = (options?: { readonly withRegistry?: boolean }) => {
     ...(options?.withRegistry === true ? { registry: createDevjobsRegistry() } : {}),
   });
   tracker.setConsent("analytics", "granted");
+  tracker.setConsent("measurement", "granted");
   tracker.configureCapture({ enableNetworkSending: true });
   return { tracker, transport };
 };
@@ -156,13 +158,14 @@ describe("preact visibility", () => {
     expect(observerInstances).toBe(1);
   });
 
-  it("does not double-count the same subject when remounted in the same view", async () => {
+  it("does not count the same subject when remounted in the same view", async () => {
     const { tracker } = makeTracker();
     tracker.beginView({ surface: "job-list" });
     let impressions = 0;
     let mountedEl: Element | null = null;
     const Card = ({ show }: { show: boolean }) => {
       const ref = useRef<HTMLDivElement>(null);
+      const { visibility } = useTrackingContext();
       useLayoutEffect(() => {
         mountedEl = ref.current;
       });
@@ -170,6 +173,7 @@ describe("preact visibility", () => {
         subjectKey: "listing_demo_zrh_01",
         onImpression: () => {
           impressions += 1;
+          visibility.confirmImpression("listing_demo_zrh_01");
         },
       });
       return show ? <div ref={ref} /> : null;
@@ -219,7 +223,14 @@ describe("preact demo app", () => {
     const { rerender } = render(
       <DemoApp client={tracker} networkSendingEnabled analyticsConsent="granted" />,
     );
-    rerender(<DemoApp client={tracker} networkSendingEnabled analyticsConsent="denied" />);
+    rerender(
+      <DemoApp
+        client={tracker}
+        networkSendingEnabled
+        analyticsConsent="granted"
+        measurementConsent="denied"
+      />,
+    );
     const before = transport.sent.length;
     const denied = await tracker.capture({
       event_name: "devjobs.listing.view",

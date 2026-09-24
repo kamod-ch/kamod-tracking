@@ -6,11 +6,15 @@ export {
   DEFAULT_MAX_BATCH_EVENTS,
 } from "./server/browser-collector";
 export type { BrowserCollectHandler, BrowserCollectorOptions } from "./server/browser-collector";
-export { createServerCollectHandler } from "./server/server-collector";
+export {
+  createServerCollectHandler,
+  statusForServerCollectReject,
+} from "./server/server-collector";
 export type {
   ServerCollectAuth,
   ServerCollectorOptions,
   ServerCollectHandler,
+  ServerCollectResponseBody,
 } from "./server/server-collector";
 export {
   DEFAULT_MAX_BATCH_EVENTS as BATCH_MAX_EVENTS,
@@ -33,5 +37,15 @@ export {
   createResettableMemoryEnvelopeStore,
 } from "./server/memory-batch";
 export { eventIdFromOutboxId } from "./server/outbox";
-export type { OutboxEventWriter, OutboxTrackingRecord, OutboxWriteResult } from "./server/outbox";
+export type {
+  OutboxEventWriter,
+  OutboxTrackingRecord,
+  OutboxWriteResult,
+  ValidatedOutboxWriteInput,
+} from "./server/outbox";
+export {
+  outboxRecordToSubmitted,
+  prepareValidatedOutboxEnvelope,
+  rejectForbiddenOutboxScopeClaims,
+} from "./server/outbox-prepare";
 export { mountBrowserCollectOnHono, mountServerCollectOnHono } from "./server/hono-adapter";

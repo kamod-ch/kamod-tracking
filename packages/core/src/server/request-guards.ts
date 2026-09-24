@@ -72,28 +72,62 @@ export const normalizeOriginHost = (originOrReferer: string | null): string | un
   }
 };
 
+/**
+ * When the browser sends an Origin header, only that origin is considered (no Referer fallback).
+ * Without Origin, Referer may match for same-document navigations.
+ */
 export const isOriginAllowed = (request: Request, allowedOrigins: readonly string[]): boolean => {
   if (allowedOrigins.length === 0) {
     return true;
   }
-  const origin = normalizeOriginHost(request.headers.get("origin"));
-  if (origin && allowedOrigins.includes(origin)) {
-    return true;
+  const originHeader = request.headers.get("origin");
+  if (originHeader !== null) {
+    const origin = normalizeOriginHost(originHeader);
+    return origin !== undefined && allowedOrigins.includes(origin);
   }
-  const referer = request.headers.get("referer");
-  const refererOrigin = normalizeOriginHost(referer);
-  if (refererOrigin && allowedOrigins.includes(refererOrigin)) {
-    return true;
-  }
-  return false;
+  const refererOrigin = normalizeOriginHost(request.headers.get("referer"));
+  return refererOrigin !== undefined && allowedOrigins.includes(refererOrigin);
 };
 
-export const corsPreflightResponse = (allowedOrigins: readonly string[]): Response => {
-  const allowOrigin = allowedOrigins.length === 1 ? allowedOrigins[0] : (allowedOrigins[0] ?? "*");
+export const corsHeadersForCollectResponse = (
+  request: Request,
+  allowedOrigins: readonly string[],
+): Record<string, string> => {
+  const headers: Record<string, string> = { vary: "Origin" };
+  if (allowedOrigins.length === 0) {
+    return headers;
+  }
+  const origin = normalizeOriginHost(request.headers.get("origin"));
+  if (origin !== undefined && allowedOrigins.includes(origin)) {
+    headers["access-control-allow-origin"] = origin;
+  }
+  return headers;
+};
+
+export const corsPreflightResponse = (
+  request: Request,
+  allowedOrigins: readonly string[],
+): Response => {
+  if (allowedOrigins.length === 0) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        vary: "Origin",
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        "access-control-max-age": "86400",
+      },
+    });
+  }
+  const origin = normalizeOriginHost(request.headers.get("origin"));
+  if (origin === undefined || !allowedOrigins.includes(origin)) {
+    return new Response(null, { status: 403, headers: { vary: "Origin" } });
+  }
   return new Response(null, {
     status: 204,
     headers: {
-      "access-control-allow-origin": allowOrigin ?? "*",
+      "access-control-allow-origin": origin,
+      vary: "Origin",
       "access-control-allow-methods": "POST, OPTIONS",
       "access-control-allow-headers": "content-type",
       "access-control-max-age": "86400",

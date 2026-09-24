@@ -1,69 +1,62 @@
 # Kamod Tracking
 
-First-party product analytics SDK. This repository is a library, not a hosted service.
+First-party product analytics SDK (library only — not a hosted collector or dashboard).
 
-```ts
-import {
-  createMemoryConsentStore,
-  createMemoryEventStore,
-  createTrackingPipeline,
-  recordConsent,
-} from "@kamod-ch/tracking";
-import { createBrowserTracker } from "@kamod-ch/tracking/browser";
-import { createIngestHandler } from "@kamod-ch/tracking/server";
+## Consumer install (reproducible)
 
-const consents = createMemoryConsentStore();
-const pipeline = createTrackingPipeline({
-  appId: "docs",
-  store: createMemoryEventStore(),
-  consents,
-});
-
-recordConsent({
-  store: consents,
-  appId: "docs",
-  purpose: "analytics",
-  state: "granted",
-  recordedAt: new Date().toISOString(),
-});
-
-await pipeline.recordConversion({ appId: "docs", name: "signup_verified" });
-
-const tracker = createBrowserTracker({ appId: "docs" });
-tracker.setConsent("analytics", "granted");
-await tracker.pageView({ path: "/docs" });
-
-const collector = createIngestHandler(pipeline);
+```sh
+git clone <repo>
+cd kamod-tracking
+pnpm install          # pnpm 11.25.0 (see packageManager)
+pnpm verify           # typecheck, lint, format, unit tests, examples (memory), build, exports, bundle, e2e smoke
 ```
+
+**With PostgreSQL** (required for SQL integration release gate):
+
+```sh
+docker compose -f docker-compose.tracking-test.yml up -d
+export TRACKING_TEST_DATABASE_URL='postgres://tracking:tracking@127.0.0.1:54329/tracking_test'
+pnpm verify:all       # verify + pnpm test:postgres + collector-postgres example
+```
+
+CI runs the same split: job `quality` → `pnpm verify`; job `postgres` → `pnpm test:postgres` (see [docs/verify-matrix.md](docs/verify-matrix.md)).
 
 ## Package surface
 
-| Import                        | Status                                  |
-| ----------------------------- | --------------------------------------- |
-| `@kamod-ch/tracking`          | Event contract and config               |
-| `@kamod-ch/tracking/browser`  | Browser client                          |
-| `@kamod-ch/tracking/preact`   | Optional Preact adapter                 |
-| `@kamod-ch/tracking/server`   | Collector (`Request` → `Response`)      |
-| `@kamod-ch/tracking/postgres` | Optional PostgreSQL adapter (peer `pg`) |
+| Import                        | Role                                     |
+| ----------------------------- | ---------------------------------------- |
+| `@kamod-ch/tracking`          | Event contract, registry, consent stores |
+| `@kamod-ch/tracking/browser`  | Browser client (no Node / no `pg`)       |
+| `@kamod-ch/tracking/preact`   | Optional Preact adapter                  |
+| `@kamod-ch/tracking/server`   | Collectors (`Request` → `Response`)      |
+| `@kamod-ch/tracking/postgres` | Optional PostgreSQL adapter (peer `pg`)  |
 
-See [docs/getting-started.md](docs/getting-started.md), [docs/package-boundaries.md](docs/package-boundaries.md), and [docs/adr](docs/adr).
+## Examples
 
-## Local development
+| Tier                       | Path                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Memory demos               | [examples/vanilla-browser](examples/vanilla-browser/), [examples/server-outbox-postgres](examples/server-outbox-postgres/) |
+| **PostgreSQL integration** | **[examples/collector-postgres](examples/collector-postgres/)** — browser collector + PG batch adapter + ops counters      |
+| Product consumer           | Your app repo — mount handlers, run workers, own outbox tables                                                             |
+
+Index: [examples/README.md](examples/README.md).
+
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [Operational guarantees](docs/operational-guarantees.md) — transport, consent, session, rebuild
+- [Observability](docs/observability.md) — ops counters tied to outcomes
+- [Migrations / rollback](docs/migrations.md)
+- [Implementation status](docs/implementation-status.md)
+- [Verify matrix](docs/verify-matrix.md)
+
+## Local commands
 
 ```sh
-pnpm install
 pnpm typecheck
-pnpm lint
-pnpm format:check
-pnpm test
+pnpm test              # unit (PostgreSQL tests excluded without env)
+pnpm test:postgres     # requires TRACKING_TEST_DATABASE_URL
 pnpm build
-pnpm check:exports
+pnpm check:exports     # packed tarball + browser bundle guard
 pnpm measure:bundle
-pnpm e2e:smoke
-# or
-pnpm verify
 ```
-
-Examples: [examples/](examples/). Documentation: [docs/getting-started.md](docs/getting-started.md), [docs/verify-matrix.md](docs/verify-matrix.md).
-
-The folder started empty. **pnpm** (`packageManager` in the root `package.json`) is the package manager.

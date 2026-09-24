@@ -5,12 +5,14 @@ import {
   type OccurredAtTrust,
   type TrackingEventEnvelope,
 } from "./envelope";
+import { envelopesHaveSameDedupContent } from "./envelope-dedup";
 import { hasForbiddenProducerFields } from "./producer-guard";
 import type { EnvelopeStore } from "./envelope-store";
 import { projectLegacyTrackingEvent } from "./legacy-projection";
 import type { EventRegistry } from "./registry";
 import { isIsoTimestamp, isValidObjectId } from "./schema-fields";
 import { isCollectionAllowed, readConsentState, UNSPECIFIED_LEGAL_BASIS } from "./consent";
+import { resolveEventCollectionPurpose } from "./collection-purpose";
 import { toIso } from "./runtime";
 import type {
   Clock,
@@ -18,7 +20,6 @@ import type {
   EventOrigin,
   IdFactory,
   IngestResult,
-  Purpose,
   SubmittedEvent,
   TrustClass,
 } from "./types";
@@ -35,6 +36,29 @@ export type ContractIngestOptions = {
   readonly clock?: Clock;
   readonly ids?: IdFactory;
   readonly allowSession?: boolean;
+};
+
+const resolveSubmittedEventId = (
+  submitted: SubmittedEvent,
+  options: ContractIngestOptions,
+):
+  | { readonly ok: true; readonly eventId: string }
+  | { readonly ok: false; readonly reason: "invalid-payload" } => {
+  const eventId = submitted.id ?? options.ids?.eventId();
+  if (eventId === undefined || !isValidObjectId(eventId)) {
+    return { ok: false, reason: "invalid-payload" };
+  }
+  return { ok: true, eventId };
+};
+
+const reconcileWithStoredEnvelope = (
+  existing: TrackingEventEnvelope,
+  incoming: TrackingEventEnvelope,
+): IngestResult => {
+  if (!envelopesHaveSameDedupContent(existing, incoming)) {
+    return { ok: false, reason: "payload-conflict" };
+  }
+  return envelopeIngestSuccess(existing);
 };
 
 export const ingestContractEvent = async (
@@ -68,18 +92,18 @@ export const ingestContractEvent = async (
     return { ok: false, reason: "producer-not-allowed" };
   }
 
-  const eventId = submitted.id ?? options.ids?.eventId() ?? globalThis.crypto.randomUUID();
-  if (!isValidObjectId(eventId)) {
-    return { ok: false, reason: "invalid-payload" };
+  const eventIdResult = resolveSubmittedEventId(submitted, options);
+  if (!eventIdResult.ok) {
+    return eventIdResult;
   }
+  const eventId = eventIdResult.eventId;
   const existing = await Promise.resolve(options.envelopeStore.get(eventId));
   if (existing) {
-    return {
-      ok: true,
-      event: projectLegacyTrackingEvent(existing),
-      envelope: existing,
-      guarantee: "best-effort",
-    };
+    const built = buildEnvelopeFromSubmitted(options, submitted, eventId);
+    if (!built.ok) {
+      return built;
+    }
+    return reconcileWithStoredEnvelope(existing, built.envelope);
   }
 
   const built = buildEnvelopeFromSubmitted(options, submitted, eventId);
@@ -122,18 +146,18 @@ export const prepareContractEnvelope = async (
     return { ok: false, reason: "producer-not-allowed" };
   }
 
-  const eventId = submitted.id ?? options.ids?.eventId() ?? globalThis.crypto.randomUUID();
-  if (!isValidObjectId(eventId)) {
-    return { ok: false, reason: "invalid-payload" };
+  const eventIdResult = resolveSubmittedEventId(submitted, options);
+  if (!eventIdResult.ok) {
+    return eventIdResult;
   }
+  const eventId = eventIdResult.eventId;
   const existing = await Promise.resolve(options.envelopeStore.get(eventId));
   if (existing) {
-    return {
-      ok: true,
-      event: projectLegacyTrackingEvent(existing),
-      envelope: existing,
-      guarantee: "best-effort",
-    };
+    const built = buildEnvelopeFromSubmitted(options, submitted, eventId);
+    if (!built.ok) {
+      return built;
+    }
+    return reconcileWithStoredEnvelope(existing, built.envelope);
   }
 
   const built = buildEnvelopeFromSubmitted(options, submitted, eventId);
@@ -189,7 +213,15 @@ const buildEnvelopeFromSubmitted = (
     return { ok: false, reason: "invalid-payload" };
   }
 
-  const purpose = submitted.purpose ?? defaultPurpose(submitted.name, producer);
+  const definition = options.registry.get(submitted.name, schemaVersion);
+  if (!definition) {
+    return { ok: false, reason: "unknown-event" };
+  }
+
+  const purpose = resolveEventCollectionPurpose(definition);
+  if (producer === "browser" && submitted.purpose !== undefined && submitted.purpose !== purpose) {
+    return { ok: false, reason: "invalid-payload" };
+  }
   const consent = readConsentState(options.consents, submitted.appId, purpose);
   if (!isCollectionAllowed(consent, purpose)) {
     return { ok: false, reason: "consent-denied" };
@@ -236,8 +268,3 @@ const envelopeIngestSuccess = (envelope: TrackingEventEnvelope): IngestResult =>
 
 const trustForOrigin = (origin: EventOrigin): TrustClass =>
   origin === "browser" ? "untrusted" : "trusted";
-
-const defaultPurpose = (name: string, origin: EventOrigin): Purpose => {
-  if (origin === "server" || name === "conversion") return "measurement";
-  return "analytics";
-};

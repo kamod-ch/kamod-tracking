@@ -4,14 +4,15 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    exclude: process.env.TRACKING_TEST_DATABASE_URL
-      ? ["**/node_modules/**", "**/dist/**"]
-      : [
-          "**/node_modules/**",
-          "**/dist/**",
-          "tests/postgres.integration.test.ts",
-          "tests/postgres-aggregation.integration.test.ts",
-        ],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "tests/postgres.integration.test.ts",
+      "tests/postgres-aggregation.integration.test.ts",
+      "tests/postgres-batch.integration.test.ts",
+      "tests/postgres-aggregation-bucket.integration.test.ts",
+      "tests/postgres-retention.integration.test.ts",
+    ],
   },
   esbuild: {
     jsx: "automatic",

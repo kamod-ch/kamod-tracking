@@ -24,3 +24,15 @@ export const selectBucketInstant = (input: BucketTimestampInput): Date => {
 };
 
 export const DEFAULT_MAX_PRODUCER_SKEW_MS = 7 * 24 * 60 * 60_000;
+
+/** Version id persisted on aggregate rows; bump when bucketing policy changes. */
+export const BUCKET_INSTANT_RULE_V1 = "bucket_instant_v1";
+
+export const expandCandidateUtcBounds = (
+  startUtc: Date,
+  endUtc: Date,
+  maxProducerSkewMs: number,
+): { readonly startUtc: Date; readonly endUtc: Date } => ({
+  startUtc: new Date(startUtc.getTime() - maxProducerSkewMs),
+  endUtc: new Date(endUtc.getTime() + maxProducerSkewMs),
+});

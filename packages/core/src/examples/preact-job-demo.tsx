@@ -1,6 +1,12 @@
 import { useRef, useState } from "preact/hooks";
 import type { BrowserClient } from "../browser/client";
-import { TrackingProvider, useCapture, useViewSurface, useVisibleImpression } from "../preact";
+import {
+  TrackingProvider,
+  useTrackingClient,
+  useTrackingContext,
+  useViewSurface,
+  useVisibleImpression,
+} from "../preact";
 
 export type DemoListing = {
   readonly listing_id: string;
@@ -27,21 +33,30 @@ type JobCardProps = {
 };
 
 export const JobCard = ({ listing, path, onOpen }: JobCardProps) => {
-  const capture = useCapture();
+  const client = useTrackingClient();
+  const { visibility } = useTrackingContext();
   const cardRef = useRef<HTMLDivElement>(null);
   useVisibleImpression(cardRef, {
     subjectKey: listing.listing_id,
     eligible: () => listing.is_job,
     onImpression: () => {
-      capture({
-        event_name: "devjobs.listing.view",
-        schema_version: 1,
-        properties: {
-          path,
-          listing_id: listing.listing_id,
-          canton: listing.canton,
-        },
-      });
+      void client
+        .capture({
+          event_name: "devjobs.listing.view",
+          schema_version: 1,
+          properties: {
+            path,
+            listing_id: listing.listing_id,
+            canton: listing.canton,
+          },
+        })
+        .then((result) => {
+          if (result.ok) {
+            visibility.confirmImpression(listing.listing_id);
+          } else {
+            visibility.cancelImpression(listing.listing_id);
+          }
+        });
     },
   });
 
@@ -85,13 +100,20 @@ export type DemoAppProps = {
   readonly client: BrowserClient;
   readonly networkSendingEnabled: boolean;
   readonly analyticsConsent: "granted" | "denied";
+  readonly measurementConsent?: "granted" | "denied";
 };
 
-export const DemoApp = ({ client, networkSendingEnabled, analyticsConsent }: DemoAppProps) => (
+export const DemoApp = ({
+  client,
+  networkSendingEnabled,
+  analyticsConsent,
+  measurementConsent = "granted",
+}: DemoAppProps) => (
   <TrackingProvider
     client={client}
     networkSendingEnabled={networkSendingEnabled}
     analyticsConsent={analyticsConsent}
+    measurementConsent={measurementConsent}
   >
     <DemoRoutes />
   </TrackingProvider>

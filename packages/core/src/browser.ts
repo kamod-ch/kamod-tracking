@@ -14,11 +14,21 @@ export type {
 } from "./browser/client";
 export { computeRetryDelayMs, isPermanentRejectReason } from "./browser/backoff";
 export {
+  bindNavigatorSendBeacon,
   buildCollectUrl,
+  buildCollectorBeaconBody,
+  COLLECTOR_JSON_CONTENT_TYPE,
   createCollectorTransport,
+  filterOutcomesToBatch,
+  outcomesCoverBatch,
+  parseRetryAfterHeader,
   toCollectorBatchBody,
 } from "./browser/collector-transport";
-export type { CollectorSendResult, CollectorTransport } from "./browser/collector-transport";
+export type {
+  CollectorSendResult,
+  CollectorTransport,
+  SendBeaconFn,
+} from "./browser/collector-transport";
 export { createEventQueue, DEFAULT_QUEUE_LIMITS, resolveQueueLimits } from "./browser/event-queue";
 export type { QueuedCollectorEvent, QueueLimits } from "./browser/event-queue";
 export { createViewImpressionState } from "./browser/view-state";

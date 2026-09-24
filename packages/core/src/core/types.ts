@@ -77,7 +77,9 @@ export type IngestRejectReason =
   | "forbidden-producer-field"
   | "duplicate-impression"
   | "capture-disabled"
-  | "identity-not-allowed";
+  | "identity-not-allowed"
+  | "payload-conflict"
+  | "storage-error";
 
 export type IngestResult =
   | {

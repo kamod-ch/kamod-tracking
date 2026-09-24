@@ -15,9 +15,11 @@
 1. **Register events** in a module-local registry (extend or compose `createEventRegistry()`). Example: [examples/devjobs/registry.ts](../examples/devjobs/registry.ts).
 2. **Browser:** construct `createBrowserTracker` with that registry, wire consent from your privacy layer, enable capture only after grant, use visibility hooks or `beginView`/`endView` for listing impressions ([preact-integration.md](./preact-integration.md)).
 3. **Collector:** deploy `@kamod-ch/tracking/server` handlers with a `SiteRegistry` row per public key; map `tenant_id` / `site_id` server-side — never from the browser payload.
-4. **Trusted business facts:** emit via **server outbox** (`createServerCollectHandler`) with bearer auth — e.g. verified apply, plan limits, employer actions. Derive ids from your outbox primary key (`eventIdFromOutboxId`). Server-origin events default to purpose **`measurement`**; grant consent for that purpose separately from `analytics`.
+4. **Trusted business facts:** emit via **server outbox** (`createServerCollectHandler`) with bearer auth — scope comes from auth, not the payload. Registry/producer/purpose/subject are validated before `OutboxEventWriter` or storage. Derive ids from your outbox primary key (`eventIdFromOutboxId`). Keep business transactions and application outbox tables in your service; workers deliver validated envelopes (see `examples/server-outbox-postgres/domain-outbox-worker.mjs`).
 5. **Persistence:** optional `@kamod-ch/tracking/postgres` migrations + `createScopedPostgresEnvelopeStore`; run daily aggregate jobs from your worker/cron.
 6. **Read models:** domain apps query `tracking.daily_aggregates` or project envelopes into their own tables — the SDK does not ship employer dashboards.
+
+**Pixel / email-open GIF:** not part of v0.1 — no concrete consumer requirement in this repo ([pixel-adapter.md](./pixel-adapter.md)).
 
 ## Metering stays outside the core
 
