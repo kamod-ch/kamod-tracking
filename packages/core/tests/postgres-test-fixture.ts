@@ -11,6 +11,12 @@ export const postgresPool = (): Pool => {
   return pool;
 };
 
+export const resetPostgresTestData = async (): Promise<void> => {
+  await postgresPool().query(
+    "TRUNCATE TABLE tracking.tenants, tracking.aggregate_dirty_days CASCADE",
+  );
+};
+
 export const registerPostgresIntegrationHooks = (): void => {
   beforeAll(async () => {
     const databaseUrl = process.env.TRACKING_TEST_DATABASE_URL?.trim();

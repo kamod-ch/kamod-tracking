@@ -8,7 +8,11 @@ import {
 } from "../src/postgres/daily-aggregate";
 import { createScopedPostgresEnvelopeStore, seedTrackingSite } from "../src/postgres/scoped-store";
 import type { TrackingEventEnvelope } from "../src/core/envelope";
-import { postgresPool, registerPostgresIntegrationHooks } from "./postgres-test-fixture";
+import {
+  postgresPool,
+  registerPostgresIntegrationHooks,
+  resetPostgresTestData,
+} from "./postgres-test-fixture";
 
 registerPostgresIntegrationHooks();
 
@@ -80,12 +84,7 @@ const seedWatermark = async () => {
 describe("postgres aggregation bucketing (integration)", () => {
   beforeEach(async () => {
     const pool = postgresPool();
-    await pool.query("DELETE FROM tracking.daily_aggregates");
-    await pool.query("DELETE FROM tracking.aggregate_dirty_days");
-    await pool.query("DELETE FROM tracking.events");
-    await pool.query("DELETE FROM tracking.event_inbox");
-    await pool.query("DELETE FROM tracking.sites");
-    await pool.query("DELETE FROM tracking.tenants");
+    await resetPostgresTestData();
     await seedTrackingSite(pool, { ...scope, appId: "app_bucket" });
     await seedPolicy();
   });
@@ -278,12 +277,16 @@ describe("postgres aggregation bucketing (integration)", () => {
     await store.acceptEnvelope(
       baseEnvelope({
         event_id: "evt_surface_ok",
+        occurred_at: "2026-03-29T12:00:00.000Z",
+        received_at: "2026-03-29T12:01:00.000Z",
         properties: { path: "/jobs", content_type: "page", surface: "job-list" },
       }),
     );
     await store.acceptEnvelope(
       baseEnvelope({
         event_id: "evt_surface_bad",
+        occurred_at: "2026-03-29T12:00:00.000Z",
+        received_at: "2026-03-29T12:01:00.000Z",
         properties: { path: "/jobs", content_type: "page", surface: "random-high-cardinality" },
       }),
     );
@@ -331,36 +334,28 @@ describe("postgres aggregation bucketing (integration)", () => {
       }),
     ).toBe(1);
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const locked = await client.query<{ dirty_generation: string }>(
-        `SELECT dirty_generation FROM tracking.aggregate_dirty_days
-         WHERE tenant_id = $1 AND site_id = $2 AND purpose = 'analytics'
-           AND local_date = $3::date AND time_zone = $4 AND aggregate_rule_version = $5
-         FOR UPDATE`,
-        [scope.tenantId, scope.siteId, localDate, utc, rule],
-      );
-      const generation = Number(locked.rows[0]?.dirty_generation);
-      await markAggregateDirtyDay(pool, {
-        ...scope,
-        purpose: "analytics",
-        localDate,
-        timeZone: utc,
-        aggregateRuleVersion: rule,
-        reason: "late_event",
-      });
-      await client.query(
-        `DELETE FROM tracking.aggregate_dirty_days
-         WHERE tenant_id = $1 AND site_id = $2 AND purpose = 'analytics'
-           AND local_date = $3::date AND time_zone = $4 AND aggregate_rule_version = $5
-           AND dirty_generation = $6`,
-        [scope.tenantId, scope.siteId, localDate, utc, rule, generation],
-      );
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+    const generation = await readDirtyGeneration(pool, {
+      ...scope,
+      purpose: "analytics",
+      localDate,
+      timeZone: utc,
+      aggregateRuleVersion: rule,
+    });
+    await markAggregateDirtyDay(pool, {
+      ...scope,
+      purpose: "analytics",
+      localDate,
+      timeZone: utc,
+      aggregateRuleVersion: rule,
+      reason: "late_event",
+    });
+    await pool.query(
+      `DELETE FROM tracking.aggregate_dirty_days
+       WHERE tenant_id = $1 AND site_id = $2 AND purpose = 'analytics'
+         AND local_date = $3::date AND time_zone = $4 AND aggregate_rule_version = $5
+         AND dirty_generation = $6`,
+      [scope.tenantId, scope.siteId, localDate, utc, rule, generation],
+    );
 
     expect(
       await readDirtyGeneration(pool, {

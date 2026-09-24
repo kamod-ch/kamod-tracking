@@ -7,7 +7,11 @@ import {
 } from "../src/postgres/retention";
 import { createScopedPostgresEnvelopeStore, seedTrackingSite } from "../src/postgres/scoped-store";
 import type { TrackingEventEnvelope } from "../src/core/envelope";
-import { postgresPool, registerPostgresIntegrationHooks } from "./postgres-test-fixture";
+import {
+  postgresPool,
+  registerPostgresIntegrationHooks,
+  resetPostgresTestData,
+} from "./postgres-test-fixture";
 
 registerPostgresIntegrationHooks();
 
@@ -39,14 +43,7 @@ const envelope = (overrides: Partial<TrackingEventEnvelope> = {}): TrackingEvent
 describe("postgres retention without destroying historical metrics", () => {
   beforeEach(async () => {
     const pool = postgresPool();
-    await pool.query("DELETE FROM tracking.retention_purge_checkpoint");
-    await pool.query("DELETE FROM tracking.raw_coverage_gaps");
-    await pool.query("DELETE FROM tracking.daily_aggregates");
-    await pool.query("DELETE FROM tracking.raw_data_watermark");
-    await pool.query("DELETE FROM tracking.events");
-    await pool.query("DELETE FROM tracking.event_inbox");
-    await pool.query("DELETE FROM tracking.sites");
-    await pool.query("DELETE FROM tracking.tenants");
+    await resetPostgresTestData();
     await seedTrackingSite(pool, { ...scope, appId: "app_ret" });
   });
 

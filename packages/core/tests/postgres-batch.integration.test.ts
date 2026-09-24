@@ -5,7 +5,11 @@ import {
   createScopedPostgresBatchAcceptance,
 } from "../src/postgres/scoped-batch-acceptance";
 import { countInboxRows, countStoredEvents, seedTrackingSite } from "../src/postgres/scoped-store";
-import { postgresPool, registerPostgresIntegrationHooks } from "./postgres-test-fixture";
+import {
+  postgresPool,
+  registerPostgresIntegrationHooks,
+  resetPostgresTestData,
+} from "./postgres-test-fixture";
 
 registerPostgresIntegrationHooks();
 
@@ -36,10 +40,7 @@ const envelope = (overrides: Partial<TrackingEventEnvelope> = {}): TrackingEvent
 describe("postgres batch acceptance (integration)", () => {
   beforeEach(async () => {
     const pool = postgresPool();
-    await pool.query("DELETE FROM tracking.events");
-    await pool.query("DELETE FROM tracking.event_inbox");
-    await pool.query("DELETE FROM tracking.sites");
-    await pool.query("DELETE FROM tracking.tenants");
+    await resetPostgresTestData();
     await seedTrackingSite(pool, { ...scope, appId: "app_batch" });
     await seedTrackingSite(pool, { ...otherScope, appId: "app_other" });
   });

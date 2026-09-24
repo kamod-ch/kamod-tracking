@@ -7,10 +7,14 @@ import {
   upsertRawWatermark,
 } from "../src/postgres/daily-aggregate";
 import { incrementOpsCounter } from "../src/postgres/ops-metrics";
-import { runPurposeRetention } from "../src/postgres/retention";
+import { advanceRecomputeFloorAfterPurge, runPurposeRetention } from "../src/postgres/retention";
 import { createScopedPostgresEnvelopeStore, seedTrackingSite } from "../src/postgres/scoped-store";
 import type { TrackingEventEnvelope } from "../src/core/envelope";
-import { postgresPool, registerPostgresIntegrationHooks } from "./postgres-test-fixture";
+import {
+  postgresPool,
+  registerPostgresIntegrationHooks,
+  resetPostgresTestData,
+} from "./postgres-test-fixture";
 
 registerPostgresIntegrationHooks();
 
@@ -41,14 +45,7 @@ const envelope = (overrides: Partial<TrackingEventEnvelope> = {}): TrackingEvent
 describe("postgres aggregation (integration)", () => {
   beforeEach(async () => {
     const pool = postgresPool();
-    await pool.query("DELETE FROM tracking.daily_aggregates");
-    await pool.query("DELETE FROM tracking.aggregate_dirty_days");
-    await pool.query("DELETE FROM tracking.raw_data_watermark");
-    await pool.query("DELETE FROM tracking.ops_site_counters");
-    await pool.query("DELETE FROM tracking.events");
-    await pool.query("DELETE FROM tracking.event_inbox");
-    await pool.query("DELETE FROM tracking.sites");
-    await pool.query("DELETE FROM tracking.tenants");
+    await resetPostgresTestData();
     await seedTrackingSite(pool, { ...scope, appId: "app_agg" });
     await pool.query(
       `INSERT INTO tracking.site_data_policy (
@@ -148,10 +145,13 @@ describe("postgres aggregation (integration)", () => {
     );
     const client = await pool.connect();
     try {
-      await upsertRawWatermark(
+      const recomputeFloor = new Date("2026-03-01T00:00:00.000Z");
+      await upsertRawWatermark(client, { ...scope, purpose: "analytics" }, recomputeFloor);
+      await advanceRecomputeFloorAfterPurge(
         client,
         { ...scope, purpose: "analytics" },
-        new Date("2026-03-01T00:00:00.000Z"),
+        recomputeFloor,
+        undefined,
       );
     } finally {
       client.release();
