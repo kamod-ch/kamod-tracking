@@ -12,6 +12,7 @@ import {
 import {
   applyTrackingMigrations,
   createScopedPostgresBatchAcceptance,
+  seedTrackingSite,
 } from "@kamod-ch/tracking/postgres";
 import { createBrowserCollectHandler, createStaticSiteRegistry } from "@kamod-ch/tracking/server";
 
@@ -51,15 +52,11 @@ await pool.query("DELETE FROM tracking.events WHERE tenant_id = $1", [site.tenan
 await pool.query("DELETE FROM tracking.event_inbox WHERE tenant_id = $1", [site.tenantId]);
 await pool.query("DELETE FROM tracking.sites WHERE tenant_id = $1", [site.tenantId]);
 await pool.query("DELETE FROM tracking.tenants WHERE tenant_id = $1", [site.tenantId]);
-await pool.query(`INSERT INTO tracking.tenants (tenant_id, display_name) VALUES ($1, $2)`, [
-  site.tenantId,
-  "Example tenant",
-]);
-await pool.query(
-  `INSERT INTO tracking.sites (tenant_id, site_id, app_id, public_ingest_key)
-   VALUES ($1, $2, $3, $4)`,
-  [site.tenantId, site.siteId, site.appId, site.publicKey],
-);
+await seedTrackingSite(pool, {
+  tenantId: site.tenantId,
+  siteId: site.siteId,
+  appId: site.appId,
+});
 
 const registry = createEventRegistry();
 registerContentViewEvents(registry);

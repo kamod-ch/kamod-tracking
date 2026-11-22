@@ -66,16 +66,17 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@testing-library/preact": "^3.2.4",
-    "@types/node": "^24.5.2",
-    "@types/pg": "^8.15.5",
-    "jsdom": "^27.0.0",
-    "pg": "^8.16.3",
-    "preact": "^10.26.9",
-    "preact-render-to-string": "^6.5.13",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "@testing-library/preact": "^3.2.6",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@typescript/typescript6": "^6.0.2",
+    "jsdom": "^31.0.1",
+    "pg": "^8.23.1",
+    "preact": "^11.2.0",
+    "preact-render-to-string": "^6.8.3",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   },
   "peerDependencies": {
     "pg": ">=8.11.0",

@@ -15,12 +15,11 @@
     "jsxImportSource": "preact",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "@kamod-ch/tracking": ["packages/core/src/index.ts"],
-      "@kamod-ch/tracking/browser": ["packages/core/src/browser.ts"],
-      "@kamod-ch/tracking/preact": ["packages/core/src/preact.ts"],
-      "@kamod-ch/tracking/server": ["packages/core/src/server.ts"]
+      "@kamod-ch/tracking": ["./packages/core/src/index.ts"],
+      "@kamod-ch/tracking/browser": ["./packages/core/src/browser.ts"],
+      "@kamod-ch/tracking/preact": ["./packages/core/src/preact.ts"],
+      "@kamod-ch/tracking/server": ["./packages/core/src/server.ts"]
     },
     "declaration": true,
     "sourceMap": true

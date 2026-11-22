@@ -7,6 +7,6 @@
   },
   "dependencies": {
     "@kamod-ch/tracking": "workspace:*",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   }
 }

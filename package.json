@@ -34,10 +34,10 @@
   },
   "devDependencies": {
     "@kamod-ch/tracking": "workspace:*",
-    "@types/node": "^24.5.2",
-    "oxfmt": "^0.54.0",
-    "oxlint": "^1.69.0",
-    "typescript": "^5.9.2"
+    "@types/node": "^26.6.6",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "typescript": "^7.0.2"
   },
   "packageManager": "pnpm@11.25.0"
 }

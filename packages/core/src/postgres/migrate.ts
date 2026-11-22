@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool, PoolClient } from "pg";
-
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../../migrations");
 
 const migrationFiles = [
   "001_tracking_schema.sql",
@@ -13,6 +11,19 @@ const migrationFiles = [
   "005_retention_recompute_boundary.sql",
   "006_ops_outcome_metrics.sql",
 ] as const;
+
+const resolveMigrationsDir = (): string => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const relative of ["../../migrations", "../migrations"]) {
+    const candidate = join(here, relative);
+    if (existsSync(join(candidate, migrationFiles[0]))) {
+      return candidate;
+    }
+  }
+  throw new Error(`Could not locate tracking SQL migrations near ${here}`);
+};
+
+const migrationsDir = resolveMigrationsDir();
 
 export const readMigrationSql = (fileName: (typeof migrationFiles)[number]): string =>
   readFileSync(join(migrationsDir, fileName), "utf8");
