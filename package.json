@@ -30,9 +30,12 @@
     "verify:all": "pnpm verify && node ./scripts/verify-postgres.mjs",
     "check:exports": "node ./scripts/check-packed-exports.mjs",
     "pack:core": "pnpm --filter @kamod-ch/tracking exec npm pack --dry-run",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
     "publish:core": "node -e \"console.error('Publishing is out of scope for this workspace.'); process.exit(1)\""
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@kamod-ch/tracking": "workspace:*",
     "@types/node": "^26.6.6",
     "oxfmt": "^0.78.0",
